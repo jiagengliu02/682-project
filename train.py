@@ -132,6 +132,8 @@ def main():
 
   gc.collect()
 
+  print("???",train_loader)
+
   # GPU Setup
   if torch.cuda.is_available():
     print('Using GPU')
