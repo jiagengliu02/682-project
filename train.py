@@ -75,39 +75,39 @@ def main():
   train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
   test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
 
-  train_loader = DataLoader(dataset=train_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True)
-  test_loader = DataLoader(dataset=test_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=False)
+  # train_loader = DataLoader(dataset=train_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True)
+  # test_loader = DataLoader(dataset=test_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=False)
 
   
-  # if args.smart_batch:
-  #   print('Sorting training data for smart batching...')
-  #   sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
-  #   sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
-  #   train_loader = DataLoader(dataset=train_data,
-  #                                   pin_memory=True,
-  #                                   num_workers=args.num_workers,
-  #                                   batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
-  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
+  if args.smart_batch:
+    print('Sorting training data for smart batching...')
+    sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
+    sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
+    train_loader = DataLoader(dataset=train_data,
+                                    pin_memory=True,
+                                    num_workers=args.num_workers,
+                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
+                                    collate_fn=lambda x: preprocess_example(x, 'train'))
 
-  #   test_loader = DataLoader(dataset=test_data,
-  #                               pin_memory=True,
-  #                               num_workers=args.num_workers,
-  #                               batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
-  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
-  # else:
-  #   train_loader = DataLoader(dataset=train_data,
-  #                                   pin_memory=True,
-  #                                   num_workers=args.num_workers,
-  #                                   batch_size=args.batch_size,
-  #                                   shuffle=True,
-  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
+    test_loader = DataLoader(dataset=test_data,
+                                pin_memory=True,
+                                num_workers=args.num_workers,
+                                batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
+                                collate_fn=lambda x: preprocess_example(x, 'valid'))
+  else:
+    train_loader = DataLoader(dataset=train_data,
+                                    pin_memory=True,
+                                    num_workers=args.num_workers,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    collate_fn=lambda x: preprocess_example(x, 'train'))
 
-  #   test_loader = DataLoader(dataset=test_data,
-  #                               pin_memory=True,
-  #                               num_workers=args.num_workers,
-  #                               batch_size=args.batch_size,
-  #                               shuffle=False,
-  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
+    test_loader = DataLoader(dataset=test_data,
+                                pin_memory=True,
+                                num_workers=args.num_workers,
+                                batch_size=args.batch_size,
+                                shuffle=False,
+                                collate_fn=lambda x: preprocess_example(x, 'valid'))
 
   # Declare Models  
   
