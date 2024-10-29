@@ -173,10 +173,10 @@ def main():
     print(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}')  
 
     # Save checkpoint 
-    if valid_loss <= best_loss:
-      print('Validation loss improved, saving checkpoint.')
-      best_loss = valid_loss
-      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
+    # if valid_loss <= best_loss:
+    #   print('Validation loss improved, saving checkpoint.')
+    #   best_loss = valid_loss
+    #   save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
 
 def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=True):
   ''' Run a single training epoch '''
@@ -192,7 +192,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     scheduler.step()
     gc.collect()
     spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
-    
+    print("!!!",spectrograms)
     # Move to GPU
     if gpu:
       spectrograms = spectrograms.cuda()
@@ -203,7 +203,6 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     
     # Update models
     with autocast(enabled=args.use_amp):
-      print(spectrograms)
       outputs = encoder(spectrograms, mask)
       print(outputs)
       outputs = decoder(outputs)
