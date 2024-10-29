@@ -47,43 +47,95 @@ args = parser.parse_args()
 
 def main():
 
-  # Load Data
-  if not os.path.isdir(args.data_dir):
-    os.mkdir(args.data_dir)
-  train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
-  test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
+  # # Load Data
+  # if not os.path.isdir(args.data_dir):
+  #   os.mkdir(args.data_dir)
+  # train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
+  # test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
 
   
-  if args.smart_batch:
-    print('Sorting training data for smart batching...')
-    sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
-    sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
+  # if args.smart_batch:
+  #   print('Sorting training data for smart batching...')
+  #   sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
+  #   sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
+  #   train_loader = DataLoader(dataset=train_data,
+  #                                   pin_memory=True,
+  #                                   num_workers=args.num_workers,
+  #                                   batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
+  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
 
-    test_loader = DataLoader(dataset=test_data,
+  #   test_loader = DataLoader(dataset=test_data,
+  #                               pin_memory=True,
+  #                               num_workers=args.num_workers,
+  #                               batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
+  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
+  # else:
+  #   train_loader = DataLoader(dataset=train_data,
+  #                                   pin_memory=True,
+  #                                   num_workers=args.num_workers,
+  #                                   batch_size=args.batch_size,
+  #                                   shuffle=True,
+  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
+
+  #   test_loader = DataLoader(dataset=test_data,
+  #                               pin_memory=True,
+  #                               num_workers=args.num_workers,
+  #                               batch_size=args.batch_size,
+  #                               shuffle=False,
+  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
+
+  # Ensure the data directory exists
+  if not os.path.isdir(args.data_dir):
+      os.mkdir(args.data_dir)
+
+  # Custom function to load data from WAV files instead of the default FLAC
+  def load_wav_data(path):
+      waveform, sample_rate = torchaudio.load(path)
+      return waveform, sample_rate
+
+  # Custom collate function for handling WAV files
+  def preprocess_example(batch, mode):
+      processed_batch = []
+      for (waveform, sample_rate), _, _, _, _, _ in batch:
+          # Apply any specific processing here
+          # Example: Normalize waveform
+          waveform = (waveform - waveform.mean()) / waveform.std()
+          processed_batch.append((waveform, sample_rate))
+      return processed_batch
+# Load the datasets
+  train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True, loader=load_wav_data)
+  test_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.test_set, download=True, loader=load_wav_data)
+
+  if args.smart_batch:
+      print('Sorting training data for smart batching...')
+      sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
+      sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
+      
+      train_loader = DataLoader(dataset=train_data,
+                                pin_memory=True,
+                                num_workers=args.num_workers,
+                                batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
+                                collate_fn=lambda x: preprocess_example(x, 'train'))
+      
+      test_loader = DataLoader(dataset=test_data,
                                 pin_memory=True,
                                 num_workers=args.num_workers,
                                 batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
                                 collate_fn=lambda x: preprocess_example(x, 'valid'))
   else:
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_size=args.batch_size,
-                                    shuffle=True,
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
-
-    test_loader = DataLoader(dataset=test_data,
+      train_loader = DataLoader(dataset=train_data,
+                                pin_memory=True,
+                                num_workers=args.num_workers,
+                                batch_size=args.batch_size,
+                                shuffle=True,
+                                collate_fn=lambda x: preprocess_example(x, 'train'))
+      
+      test_loader = DataLoader(dataset=test_data,
                                 pin_memory=True,
                                 num_workers=args.num_workers,
                                 batch_size=args.batch_size,
                                 shuffle=False,
                                 collate_fn=lambda x: preprocess_example(x, 'valid'))
-
 
   # Declare Models  
   
