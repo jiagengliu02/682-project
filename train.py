@@ -74,10 +74,6 @@ def main():
 
   train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
   test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
-
-  # train_loader = DataLoader(dataset=train_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=True)
-  # test_loader = DataLoader(dataset=test_data, pin_memory=True, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=False)
-
   
   if args.smart_batch:
     print('Sorting training data for smart batching...')
@@ -207,8 +203,11 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     
     # Update models
     with autocast(enabled=args.use_amp):
+      print(spectrograms)
       outputs = encoder(spectrograms, mask)
+      print(outputs)
       outputs = decoder(outputs)
+      print(outputs)
       loss = criterion(F.log_softmax(outputs, dim=-1).transpose(0, 1), labels, input_lengths, label_lengths)
     grad_scaler.scale(loss).backward()
     if (i+1) % args.accumulate_iters == 0:
