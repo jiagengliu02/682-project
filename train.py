@@ -76,13 +76,13 @@ def main():
     train_loader = DataLoader(dataset=train_data,
                                     pin_memory=True,
                                     num_workers=args.num_workers,
-                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
+                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size, drop_last=True),
                                     collate_fn=lambda x: preprocess_example(x, 'train'))
 
     test_loader = DataLoader(dataset=test_data,
                                 pin_memory=True,
                                 num_workers=args.num_workers,
-                                batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
+                                batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size, drop_last=True),
                                 collate_fn=lambda x: preprocess_example(x, 'valid'))
   else:
     train_loader = DataLoader(dataset=train_data,
