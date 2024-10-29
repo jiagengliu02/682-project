@@ -7,7 +7,6 @@ import torch.nn.functional as F
 
 from torch import nn
 from torchmetrics.text.wer import WordErrorRate
-from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from model import ConformerEncoder, LSTMDecoder
 from utils import *
@@ -43,6 +42,9 @@ parser.add_argument('--num_workers', type=int, default=2, help='num_workers for 
 parser.add_argument('--smart_batch', type=bool, default=True, help='Use smart batching for faster training')
 parser.add_argument('--accumulate_iters', type=int, default=1, help='Number of iterations to accumulate gradients')
 args = parser.parse_args()
+
+
+from torch.utils.data import Dataset, DataLoader
 class WAVLibriSpeech(Dataset):
     def __init__(self, directory, subset):
         # subset might be 'train-clean-100', 'test-clean', etc.
