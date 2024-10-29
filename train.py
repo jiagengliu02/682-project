@@ -44,7 +44,7 @@ parser.add_argument('--accumulate_iters', type=int, default=1, help='Number of i
 args = parser.parse_args()
 
 
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, BatchSampler
 class WAVLibriSpeech(Dataset):
     def __init__(self, directory, subset):
         # subset might be 'train-clean-100', 'test-clean', etc.
@@ -65,12 +65,6 @@ class WAVLibriSpeech(Dataset):
         return len(self.files)
 
 def main():
-
-  # # Load Data
-  # if not os.path.isdir(args.data_dir):
-  #   os.mkdir(args.data_dir)
-  # train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
-  # test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
 
   train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
   test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
