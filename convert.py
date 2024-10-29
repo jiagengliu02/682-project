@@ -22,5 +22,5 @@ def flac_to_wav_and_save(source_folder):
                         print(f"Failed to convert {filename}: {str(e)}")
 
 # 调用函数
-source_folder = './data/LibriSpeech/test-clean'
+source_folder = './data/LibriSpeech'
 flac_to_wav_and_save(source_folder)
