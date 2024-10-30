@@ -234,6 +234,17 @@ def audio_to_spectrograms(audios, sample_rate):
         # 将幅度谱转换为分贝（dB）单位
         S_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
         
+        # 如果没有指定最大长度，使用第一个频谱图的长度
+        if max_length is None:
+            max_length = S_db.shape[1]
+        
+        # 填充或截断频谱图
+        if S_db.shape[1] < max_length:
+            pad_width = max_length - S_db.shape[1]
+            S_db = np.pad(S_db, ((0, 0), (0, pad_width)), mode='constant')
+        else:
+            S_db = S_db[:, :max_length]
+
         # 将频谱图转换为tensor
         spectrogram = torch.tensor(S_db)
         
