@@ -225,7 +225,7 @@ def main(args):
     #   best_loss = valid_loss
     #   save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
 import librosa
-def audio_to_spectrograms(audios, sample_rate):
+def audio_to_spectrograms(audios, sample_rate, max_length=None):
     spectrograms = []
     for a in audios:        
         # 计算短时傅里叶变换（STFT）
