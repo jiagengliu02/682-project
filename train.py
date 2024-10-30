@@ -242,7 +242,17 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     scheduler.step()
     gc.collect()
     print(batch.keys())
-    spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
+    audio, text, sample_rate = batch
+
+    # spectrograms = audio_to_spectrograms(audio, sample_rate)
+    spectrograms = audio
+    input_lengths = audio.length()
+    label_lengths = text.length()
+    labels = text
+    references = text
+    mask = None
+    
+    # spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
 
     # Move to GPU
     if gpu:
