@@ -224,6 +224,29 @@ def main(args):
     #   print('Validation loss improved, saving checkpoint.')
     #   best_loss = valid_loss
     #   save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
+import librosa
+def audio_to_spectrograms(audio, sample_rate):
+    spectrograms = []
+    for a in audio:
+        # 将音频数据转换为numpy数组
+        a = a.cpu().numpy()
+        
+        # 计算短时傅里叶变换（STFT）
+        D = librosa.stft(a, n_fft=2048, hop_length=512)
+        
+        # 将幅度谱转换为分贝（dB）单位
+        S_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
+        
+        # 将频谱图转换为tensor
+        spectrogram = torch.tensor(S_db)
+        
+        # 添加到列表中
+        spectrograms.append(spectrogram)
+    
+    # 将列表转换为tensor
+    spectrograms = torch.stack(spectrograms)
+    
+    return spectrograms
 
 def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=True):
   ''' Run a single training epoch '''
@@ -244,8 +267,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     print(batch.keys())
     audio, text, sample_rate = batch['audio'], batch['text'], batch['sample_rate']
 
-    # spectrograms = audio_to_spectrograms(audio, sample_rate)
-    spectrograms = audio
+    spectrograms = audio_to_spectrograms(audio, sample_rate)
     input_lengths = len(audio)
     label_lengths = len(text)
     labels = text
@@ -256,7 +278,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
 
     # Move to GPU
     if gpu:
-      spectrograms = torch.tensor(spectrograms).cuda()
+      spectrograms = spectrograms.cuda()
       labels = torch.tensor(labels).cuda()
       input_lengths = torch.tensor(input_lengths).cuda()
       label_lengths = torch.tensor(label_lengths).cuda()
