@@ -26,37 +26,7 @@ import youtokentome as yttm
 import yaml
 from easydict import EasyDict as edict
 
-parser = argparse.ArgumentParser("conformer")
-parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
-parser.add_argument('--checkpoint_path', type=str, default='model_best.pt', help='path to store/load checkpoints')
-parser.add_argument('--load_checkpoint', action='store_true', default=False, help='resume training from checkpoint')
-parser.add_argument('--train_set', type=str, default='train-clean-100', help='train dataset')
-parser.add_argument('--test_set', type=str, default='test-clean', help='test dataset')
-parser.add_argument('--batch_size', type=int, default=32, help='batch size')
-parser.add_argument('--warmup_steps', type=float, default=10000, help='Multiply by sqrt(d_model) to get max_lr')
-parser.add_argument('--peak_lr_ratio', type=int, default=0.05, help='Number of warmup steps for LR scheduler')
-parser.add_argument('--gpu', type=int, default=0, help='gpu device id (optional)')
-parser.add_argument('--epochs', type=int, default=50, help='num of training epochs')
-parser.add_argument('--report_freq', type=int, default=100, help='training objective report frequency')
-parser.add_argument('--layers', type=int, default=8, help='total number of layers')
-parser.add_argument('--model_path', type=str, default='saved_models', help='path to save the model')
-parser.add_argument('--use_amp', action='store_true', default=False, help='use mixed precision to train')
-parser.add_argument('--attention_heads', type=int, default=4, help='number of heads to use for multi-head attention')
-parser.add_argument('--d_input', type=int, default=80, help='dimension of the input (num filter banks)')
-parser.add_argument('--d_encoder', type=int, default=144, help='dimension of the encoder')
-parser.add_argument('--d_decoder', type=int, default=320, help='dimension of the decoder')
-parser.add_argument('--encoder_layers', type=int, default=16, help='number of conformer blocks in the encoder')
-parser.add_argument('--decoder_layers', type=int, default=1, help='number of decoder layers')
-parser.add_argument('--conv_kernel_size', type=int, default=31, help='size of kernel for conformer convolution blocks')
-parser.add_argument('--feed_forward_expansion_factor', type=int, default=4, help='expansion factor for conformer feed forward blocks')
-parser.add_argument('--feed_forward_residual_factor', type=int, default=.5, help='residual factor for conformer feed forward blocks')
-parser.add_argument('--dropout', type=float, default=.1, help='dropout factor for conformer model')
-parser.add_argument('--weight_decay', type=float, default=1e-6, help='model weight decay (corresponds to L2 regularization)')
-parser.add_argument('--variational_noise_std', type=float, default=.0001, help='std of noise added to model weights for regularization')
-parser.add_argument('--num_workers', type=int, default=2, help='num_workers for the dataloader')
-parser.add_argument('--smart_batch', type=bool, default=True, help='Use smart batching for faster training')
-parser.add_argument('--accumulate_iters', type=int, default=1, help='Number of iterations to accumulate gradients')
-args = parser.parse_args()
+
 
 
 from torch.utils.data import Dataset, DataLoader, BatchSampler
@@ -104,11 +74,11 @@ def prepare_bpe(config):
     bpe = yttm.BPE(model=config.bpe.model_path)
     return bpe
 
-def main(config):
+def main(args):
 
   # train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
   # test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
-
+  config = args.config
   bpe = prepare_bpe(config)
   transforms_train = Compose([
             TextPreprocess(),
@@ -349,7 +319,39 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Training model.')
   parser.add_argument('--config', default='configs/train_librispeech.yaml',
                       help='path to config file')
+  
+  parser = argparse.ArgumentParser("conformer")
+  parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
+  parser.add_argument('--checkpoint_path', type=str, default='model_best.pt', help='path to store/load checkpoints')
+  parser.add_argument('--load_checkpoint', action='store_true', default=False, help='resume training from checkpoint')
+  parser.add_argument('--train_set', type=str, default='train-clean-100', help='train dataset')
+  parser.add_argument('--test_set', type=str, default='test-clean', help='test dataset')
+  parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+  parser.add_argument('--warmup_steps', type=float, default=10000, help='Multiply by sqrt(d_model) to get max_lr')
+  parser.add_argument('--peak_lr_ratio', type=int, default=0.05, help='Number of warmup steps for LR scheduler')
+  parser.add_argument('--gpu', type=int, default=0, help='gpu device id (optional)')
+  parser.add_argument('--epochs', type=int, default=50, help='num of training epochs')
+  parser.add_argument('--report_freq', type=int, default=100, help='training objective report frequency')
+  parser.add_argument('--layers', type=int, default=8, help='total number of layers')
+  parser.add_argument('--model_path', type=str, default='saved_models', help='path to save the model')
+  parser.add_argument('--use_amp', action='store_true', default=False, help='use mixed precision to train')
+  parser.add_argument('--attention_heads', type=int, default=4, help='number of heads to use for multi-head attention')
+  parser.add_argument('--d_input', type=int, default=80, help='dimension of the input (num filter banks)')
+  parser.add_argument('--d_encoder', type=int, default=144, help='dimension of the encoder')
+  parser.add_argument('--d_decoder', type=int, default=320, help='dimension of the decoder')
+  parser.add_argument('--encoder_layers', type=int, default=16, help='number of conformer blocks in the encoder')
+  parser.add_argument('--decoder_layers', type=int, default=1, help='number of decoder layers')
+  parser.add_argument('--conv_kernel_size', type=int, default=31, help='size of kernel for conformer convolution blocks')
+  parser.add_argument('--feed_forward_expansion_factor', type=int, default=4, help='expansion factor for conformer feed forward blocks')
+  parser.add_argument('--feed_forward_residual_factor', type=int, default=.5, help='residual factor for conformer feed forward blocks')
+  parser.add_argument('--dropout', type=float, default=.1, help='dropout factor for conformer model')
+  parser.add_argument('--weight_decay', type=float, default=1e-6, help='model weight decay (corresponds to L2 regularization)')
+  parser.add_argument('--variational_noise_std', type=float, default=.0001, help='std of noise added to model weights for regularization')
+  parser.add_argument('--num_workers', type=int, default=2, help='num_workers for the dataloader')
+  parser.add_argument('--smart_batch', type=bool, default=True, help='Use smart batching for faster training')
+  parser.add_argument('--accumulate_iters', type=int, default=1, help='Number of iterations to accumulate gradients')
   args = parser.parse_args()
   with open(args.config, 'r') as f:
       config = edict(yaml.safe_load(f))
-  main(config)
+  args.config = config
+  main(args)
