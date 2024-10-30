@@ -241,7 +241,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
   for i, batch in enumerate(train_loader):
     scheduler.step()
     gc.collect()
-    print(batch)
+    print(batch.keys())
     spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
 
     # Move to GPU
