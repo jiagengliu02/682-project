@@ -227,10 +227,7 @@ def main(args):
 import librosa
 def audio_to_spectrograms(audios, sample_rate):
     spectrograms = []
-    for a in audios:
-        # 将音频数据转换为numpy数组
-        a = a.numpy()
-        
+    for a in audios:        
         # 计算短时傅里叶变换（STFT）
         D = librosa.stft(a, n_fft=2048, hop_length=512)
         
