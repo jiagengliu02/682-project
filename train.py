@@ -236,12 +236,14 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
   encoder.train()
   decoder.train()
   
-  print("!!!",encoder)
+  # print("!!!",encoder)
   
   for i, batch in enumerate(train_loader):
     scheduler.step()
     gc.collect()
+    print(batch)
     spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
+
     # Move to GPU
     if gpu:
       spectrograms = spectrograms.cuda()
