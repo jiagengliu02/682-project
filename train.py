@@ -11,6 +11,19 @@ from torch.cuda.amp import autocast, GradScaler
 from model import ConformerEncoder, LSTMDecoder
 from utils import *
 
+import data
+import importlib
+from data.transforms import (
+        Compose, AddLengths, AudioSqueeze, TextPreprocess,
+        MaskSpectrogram, ToNumpy, BPEtexts, MelSpectrogram,
+        ToGpu, Pad, NormalizedMelSpectrogram
+)
+from audiomentations import (
+    TimeStretch, PitchShift, AddGaussianNoise
+)
+
+import youtokentome as yttm
+
 parser = argparse.ArgumentParser("conformer")
 parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
 parser.add_argument('--checkpoint_path', type=str, default='model_best.pt', help='path to store/load checkpoints')
@@ -64,40 +77,106 @@ class WAVLibriSpeech(Dataset):
     def __len__(self):
         return len(self.files)
 
-def main():
+def no_pad_collate(batch):
+    keys = batch[0].keys()
+    collated_batch = {key: [] for key in keys}
+    for key in keys:
+        items = [item[key] for item in batch]
+        collated_batch[key] = items
+    return collated_batch
 
-  train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
-  test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
+def prepare_bpe(config):
+    dataset_module = importlib.import_module(f'.{config.dataset.name}', data.__name__)
+    # train BPE
+    if config.bpe.get('train', False):
+        dataset, ids = dataset_module.get_dataset(config, part='bpe', transforms=TextPreprocess())
+        train_data_path = 'bpe_texts.txt'
+        with open(train_data_path, "w") as f:
+            # run ovefr only train part
+            for i in ids:
+                text = dataset.get_text(i)
+                f.write(f"{text}\n")
+        yttm.BPE.train(data=train_data_path, vocab_size=config.model.vocab_size, model=config.bpe.model_path)
+        os.system(f'rm {train_data_path}')
+
+    bpe = yttm.BPE(model=config.bpe.model_path)
+    return bpe
+
+def main(config):
+
+  # train_data = WAVLibriSpeech(directory=args.data_dir, subset=args.train_set)
+  # test_data = WAVLibriSpeech(directory=args.data_dir, subset=args.test_set)
+
+  bpe = prepare_bpe(config)
+  transforms_train = Compose([
+            TextPreprocess(),
+            ToNumpy(),
+            BPEtexts(bpe=bpe, dropout_prob=config.bpe.get('dropout_prob', 0.05)),
+            AudioSqueeze(),
+            AddGaussianNoise(
+                min_amplitude=0.001,
+                max_amplitude=0.015,
+                p=0.5
+            ),
+            TimeStretch(
+                min_rate=0.8,
+                max_rate=1.25,
+                p=0.5
+            ),
+            PitchShift(
+                min_semitones=-4,
+                max_semitones=4,
+                p=0.5
+            )
+            # AddLengths()
+    ])
   
-  if args.smart_batch:
-    print('Sorting training data for smart batching...')
-    sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
-    sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size, drop_last=True),
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
+  transforms_val = Compose([
+            TextPreprocess(),
+            ToNumpy(),
+            BPEtexts(bpe=bpe),
+            AudioSqueeze()
+    ])
 
-    test_loader = DataLoader(dataset=test_data,
-                                pin_memory=True,
-                                num_workers=args.num_workers,
-                                batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size, drop_last=True),
-                                collate_fn=lambda x: preprocess_example(x, 'valid'))
-  else:
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_size=args.batch_size,
-                                    shuffle=True,
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
+  dataset_module = importlib.import_module(f'.{config.dataset.name}', data.__name__)
+  train_dataset = dataset_module.get_dataset(config, transforms=transforms_train, part='train')
+  val_dataset = dataset_module.get_dataset(config, transforms=transforms_val, part='val')
 
-    test_loader = DataLoader(dataset=test_data,
-                                pin_memory=True,
-                                num_workers=args.num_workers,
-                                batch_size=args.batch_size,
-                                shuffle=False,
-                                collate_fn=lambda x: preprocess_example(x, 'valid'))
+  train_loader = DataLoader(train_dataset, num_workers=config.train.get('num_workers', 4),
+                batch_size=config.train.get('batch_size', 1), collate_fn=no_pad_collate)
+
+  val_loader = DataLoader(val_dataset, num_workers=config.train.get('num_workers', 4),
+                batch_size=1, collate_fn=no_pad_collate)
+  
+  # if args.smart_batch:
+  #   print('Sorting training data for smart batching...')
+  #   sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
+  #   sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
+  #   train_loader = DataLoader(dataset=train_data,
+  #                                   pin_memory=True,
+  #                                   num_workers=args.num_workers,
+  #                                   batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size, drop_last=True),
+  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
+
+  #   test_loader = DataLoader(dataset=test_data,
+  #                               pin_memory=True,
+  #                               num_workers=args.num_workers,
+  #                               batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size, drop_last=True),
+  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
+  # else:
+  #   train_loader = DataLoader(dataset=train_data,
+  #                                   pin_memory=True,
+  #                                   num_workers=args.num_workers,
+  #                                   batch_size=args.batch_size,
+  #                                   shuffle=True,
+  #                                   collate_fn=lambda x: preprocess_example(x, 'train'))
+
+  #   test_loader = DataLoader(dataset=test_data,
+  #                               pin_memory=True,
+  #                               num_workers=args.num_workers,
+  #                               batch_size=args.batch_size,
+  #                               shuffle=False,
+  #                               collate_fn=lambda x: preprocess_example(x, 'valid'))
 
   # Declare Models  
   
@@ -165,7 +244,7 @@ def main():
 
     # Train/Validation loops
     wer, loss = train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=gpu) 
-    valid_wer, valid_loss = validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=gpu)
+    valid_wer, valid_loss = validate(encoder, decoder, char_decoder, criterion, val_loader, args, gpu=gpu)
     print(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}')  
 
     # Save checkpoint 
