@@ -246,7 +246,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
 
     # spectrograms = audio_to_spectrograms(audio, sample_rate)
     spectrograms = audio
-    input_lengths = audio.length()
+    input_lengths = audio.shape[0]
     label_lengths = text.length()
     labels = text
     references = text
