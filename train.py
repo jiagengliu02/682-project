@@ -352,4 +352,4 @@ if __name__ == '__main__':
   args = parser.parse_args()
   with open(args.config, 'r') as f:
       config = edict(yaml.safe_load(f))
-  train(config)
+  main(config)
