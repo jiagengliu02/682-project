@@ -319,8 +319,6 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Training model.')
   parser.add_argument('--config', default='configs/train_librispeech.yaml',
                       help='path to config file')
-  
-  parser = argparse.ArgumentParser("conformer")
   parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
   parser.add_argument('--checkpoint_path', type=str, default='model_best.pt', help='path to store/load checkpoints')
   parser.add_argument('--load_checkpoint', action='store_true', default=False, help='resume training from checkpoint')
