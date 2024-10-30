@@ -114,10 +114,10 @@ def main(args):
   train_dataset = dataset_module.get_dataset(config, transforms=transforms_train, part='train')
   val_dataset = dataset_module.get_dataset(config, transforms=transforms_val, part='val')
 
-  train_loader = DataLoader(train_dataset, num_workers=config.train.get('num_workers', 4),
+  train_loader = DataLoader(train_dataset, num_workers=config.train.get('num_workers', 1),
                 batch_size=config.train.get('batch_size', 1), collate_fn=no_pad_collate)
 
-  val_loader = DataLoader(val_dataset, num_workers=config.train.get('num_workers', 4),
+  val_loader = DataLoader(val_dataset, num_workers=config.train.get('num_workers', 1),
                 batch_size=1, collate_fn=no_pad_collate)
   
   # if args.smart_batch:
