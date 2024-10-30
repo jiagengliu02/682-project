@@ -23,6 +23,8 @@ from audiomentations import (
 )
 
 import youtokentome as yttm
+import yaml
+from easydict import EasyDict as edict
 
 parser = argparse.ArgumentParser("conformer")
 parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
@@ -344,4 +346,10 @@ def validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=T
 
 
 if __name__ == '__main__':
-  main() 
+  parser = argparse.ArgumentParser(description='Training model.')
+  parser.add_argument('--config', default='configs/train_LJSpeech.yml',
+                      help='path to config file')
+  args = parser.parse_args()
+  with open(args.config, 'r') as f:
+      config = edict(yaml.safe_load(f))
+  train(config)
