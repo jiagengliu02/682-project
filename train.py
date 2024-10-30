@@ -256,8 +256,8 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
 
     # Move to GPU
     if gpu:
-      spectrograms = spectrograms.cuda()
-      labels = labels.cuda()
+      spectrograms = torch.tensor(spectrograms).cuda()
+      labels = torch.tensor(labels).cuda()
       input_lengths = torch.tensor(input_lengths).cuda()
       label_lengths = torch.tensor(label_lengths).cuda()
       mask = mask.cuda()
