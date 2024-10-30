@@ -347,7 +347,7 @@ def validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=T
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Training model.')
-  parser.add_argument('--config', default='configs/train_LJSpeech.yml',
+  parser.add_argument('--config', default='configs/train_librispeech.yaml',
                       help='path to config file')
   args = parser.parse_args()
   with open(args.config, 'r') as f:
