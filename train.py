@@ -225,11 +225,11 @@ def main(args):
     #   best_loss = valid_loss
     #   save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
 import librosa
-def audio_to_spectrograms(audio, sample_rate):
+def audio_to_spectrograms(audios, sample_rate):
     spectrograms = []
-    for a in audio:
+    for a in audios:
         # 将音频数据转换为numpy数组
-        a = a.cpu().numpy()
+        a = a.numpy()
         
         # 计算短时傅里叶变换（STFT）
         D = librosa.stft(a, n_fft=2048, hop_length=512)
@@ -265,10 +265,10 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     scheduler.step()
     gc.collect()
     print(batch.keys())
-    audio, text, sample_rate = batch['audio'], batch['text'], batch['sample_rate']
+    audios, text, sample_rate = batch['audio'], batch['text'], batch['sample_rate']
 
-    spectrograms = audio_to_spectrograms(audio, sample_rate)
-    input_lengths = len(audio)
+    spectrograms = audio_to_spectrograms(audios, sample_rate)
+    input_lengths = len(audios)
     label_lengths = len(text)
     labels = text
     references = text
