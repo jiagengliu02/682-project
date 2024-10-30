@@ -1,7 +1,31 @@
 # Pytorch Conformer
 Pytorch implementation of [conformer](https://arxiv.org/abs/2005.08100) model with training script for end-to-end speech recognition on the LibriSpeech dataset.
 
+## Environment Setup
+```bash
+conda create -n conformer python==3.10 -y
+conda activate conformer
+nvidia-smi
+# make sure that your cuda version is higher than 12.1
+```
+
+```bash
+pip install torch==2.2.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+pip install torchaudio==2.2.0
+pip install torchmetrics
+```
+
+```bash
+conda install ffmpeg
+python
+import torchaudio
+torchaudio.list_audio_backends()
+# check printed list, if it's empty:
+pip install soundfile==0.12.1
+```
+
 ## Usage
+
 
 ### Train model from scratch:
 ```
@@ -16,17 +40,4 @@ python train.py --load_checkpoint --checkpoint_path=model_best.pt
 python train.py --use_amp
 ```
 
-For a full list of command line arguments, run ```python train.py --help```. [Smart batching](https://mccormickml.com/2020/07/29/smart-batching-tutorial/) is used by default but may need to be disabled for larger datasets. For valid train_set and test_set values, see torchaudio's [LibriSpeech dataset](https://pytorch.org/audio/stable/datasets.html). The model parameters default to the Conformer (S) configuration. For the Conformer (M) and Conformer (L) models, refer to the table below: 
-
-<img src="https://jwink-public.s3.amazonaws.com/conformer-params.png" width="500"/>
-
-## Other Implementations
-- https://github.com/sooftware/conformer
-- https://github.com/lucidrains/conformer
-
-## TODO:
-- Language Model (LM) implementation
-- Multi-GPU support
-- Support for full LibriSpeech960h train set
-- Support for other decoders (ie: transformer decoder, etc.)
 
