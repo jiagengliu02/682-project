@@ -366,7 +366,7 @@ if __name__ == '__main__':
   parser.add_argument('--load_checkpoint', action='store_true', default=False, help='resume training from checkpoint')
   parser.add_argument('--train_set', type=str, default='train-clean-100', help='train dataset')
   parser.add_argument('--test_set', type=str, default='test-clean', help='test dataset')
-  parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+  parser.add_argument('--batch_size', type=int, default=1, help='batch size')
   parser.add_argument('--warmup_steps', type=float, default=10000, help='Multiply by sqrt(d_model) to get max_lr')
   parser.add_argument('--peak_lr_ratio', type=int, default=0.05, help='Number of warmup steps for LR scheduler')
   parser.add_argument('--gpu', type=int, default=0, help='gpu device id (optional)')
