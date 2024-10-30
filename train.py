@@ -242,7 +242,7 @@ def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_
     scheduler.step()
     gc.collect()
     print(batch.keys())
-    audio, text, sample_rate = batch
+    audio, text, sample_rate = batch['audio'], batch['text'], batch['sample_rate']
 
     # spectrograms = audio_to_spectrograms(audio, sample_rate)
     spectrograms = audio
