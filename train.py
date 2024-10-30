@@ -12,9 +12,11 @@ from torch.cuda.amp import autocast, GradScaler
 from model import ConformerEncoder, LSTMDecoder
 from utils import *
 
+import matplotlib.pyplot as plt
+import gc
+
 parser = argparse.ArgumentParser("conformer")
 parser.add_argument('--data_dir', type=str, default='./data', help='location to download data')
-parser.add_argument('--checkpoint_path', type=str, default='model_best.pt', help='path to store/load checkpoints')
 parser.add_argument('--load_checkpoint', action='store_true', default=False, help='resume training from checkpoint')
 parser.add_argument('--train_set', type=str, default='train-clean-100', help='train dataset')
 parser.add_argument('--test_set', type=str, default='test-clean', help='test dataset')
@@ -42,7 +44,37 @@ parser.add_argument('--variational_noise_std', type=float, default=.0001, help='
 parser.add_argument('--num_workers', type=int, default=2, help='num_workers for the dataloader')
 parser.add_argument('--smart_batch', type=bool, default=True, help='Use smart batching for faster training')
 parser.add_argument('--accumulate_iters', type=int, default=1, help='Number of iterations to accumulate gradients')
+parser.add_argument('--output_path', type=str, default='./output')
 args = parser.parse_args()
+
+
+def save_results_to_file(epoch, train_wer, train_loss, valid_wer, valid_loss, file_path):
+    with open(file_path, 'a') as f:
+        f.write(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {train_wer}%, Train Loss: {train_loss}\n')
+
+def plot_results(epochs, train_losses, valid_losses, train_wers, valid_wers, output_path):
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, label='Train Loss')
+    plt.plot(epochs, valid_losses, label='Valid Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title('Loss over Epochs')
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, train_wers, label='Train WER')
+    plt.plot(epochs, valid_wers, label='Valid WER')
+    plt.xlabel('Epoch')
+    plt.ylabel('WER (%)')
+    plt.legend()
+    plt.title('WER over Epochs')
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
 
 
 def main():
@@ -53,7 +85,9 @@ def main():
   train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
   test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
 
-  
+  if not os.path.isdir(args.output_path):
+    os.mkdir(args.output_path)
+
   if args.smart_batch:
     print('Sorting training data for smart batching...')
     sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
@@ -132,7 +166,7 @@ def main():
 
   # Initialize Checkpoint 
   if args.load_checkpoint:
-    start_epoch, best_loss = load_checkpoint(encoder, decoder, optimizer, scheduler, args.checkpoint_path)
+    start_epoch, best_loss = load_checkpoint(encoder, decoder, optimizer, scheduler, os.path.join(args.output_path,'model_best.pt'))
     print(f'Resuming training from checkpoint starting at epoch {start_epoch}.')
   else:
     start_epoch = 0
@@ -140,6 +174,13 @@ def main():
 
   # Train Loop
   optimizer.zero_grad()
+
+  # Initialize lists to store results
+  epochs = []
+  train_losses = []
+  valid_losses = []
+  train_wers = []
+  valid_wers = []
   for epoch in range(start_epoch, args.epochs):
     torch.cuda.empty_cache()
 
@@ -151,12 +192,24 @@ def main():
     wer, loss = train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=gpu) 
     valid_wer, valid_loss = validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=gpu)
     print(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}')  
+    # Save results to file
+    save_results_to_file(epoch, wer, loss, valid_wer, valid_loss, os.path.join(args.output_path,'result.txt'))
+    
+    # Store results for plotting
+    epochs.append(epoch)
+    train_losses.append(loss)
+    valid_losses.append(valid_loss)
+    train_wers.append(wer)
+    valid_wers.append(valid_wer)
 
+    if epoch %20 ==0:
+      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,f'{epoch}.pt'))
     # Save checkpoint 
     if valid_loss <= best_loss:
-      print('Validation loss improved, saving checkpoint.')
       best_loss = valid_loss
-      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, args.checkpoint_path)
+      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,'model_best.pt'))
+
+  plot_results(epochs, train_losses, valid_losses, train_wers, valid_wers, os.path.join(args.output_path,"result.png"))
 
 def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=True):
   ''' Run a single training epoch '''
