@@ -78,224 +78,223 @@ def plot_results(epochs, train_losses, valid_losses, train_wers, valid_wers, out
 
 
 def main():
+    # Load Data
+    if not os.path.isdir(args.data_dir):
+        os.mkdir(args.data_dir)
+    train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
+    test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
 
-  # Load Data
-  if not os.path.isdir(args.data_dir):
-    os.mkdir(args.data_dir)
-  train_data = torchaudio.datasets.LIBRISPEECH(root=args.data_dir, url=args.train_set, download=True)
-  test_data = torchaudio.datasets.LIBRISPEECH(args.data_dir, url=args.test_set, download=True)
+    if not os.path.isdir(args.output_path):
+        os.mkdir(args.output_path)
 
-  if not os.path.isdir(args.output_path):
-    os.mkdir(args.output_path)
+    if args.smart_batch:
+        print('Sorting training data for smart batching...')
+        sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
+        sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
+        train_loader = DataLoader(dataset=train_data,
+                                  pin_memory=True,
+                                  num_workers=args.num_workers,
+                                  batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
+                                  collate_fn=lambda x: preprocess_example(x, 'train'))
 
-  if args.smart_batch:
-    print('Sorting training data for smart batching...')
-    sorted_train_inds = [ind for ind, _ in sorted(enumerate(train_data), key=lambda x: x[1][0].shape[1])]
-    sorted_test_inds = [ind for ind, _ in sorted(enumerate(test_data), key=lambda x: x[1][0].shape[1])]
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_sampler=BatchSampler(sorted_train_inds, batch_size=args.batch_size),
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
+        test_loader = DataLoader(dataset=test_data,
+                                 pin_memory=True,
+                                 num_workers=args.num_workers,
+                                 batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
+                                 collate_fn=lambda x: preprocess_example(x, 'valid'))
+    else:
+        train_loader = DataLoader(dataset=train_data,
+                                  pin_memory=True,
+                                  num_workers=args.num_workers,
+                                  batch_size=args.batch_size,
+                                  shuffle=True,
+                                  collate_fn=lambda x: preprocess_example(x, 'train'))
 
-    test_loader = DataLoader(dataset=test_data,
-                                pin_memory=True,
-                                num_workers=args.num_workers,
-                                batch_sampler=BatchSampler(sorted_test_inds, batch_size=args.batch_size),
-                                collate_fn=lambda x: preprocess_example(x, 'valid'))
-  else:
-    train_loader = DataLoader(dataset=train_data,
-                                    pin_memory=True,
-                                    num_workers=args.num_workers,
-                                    batch_size=args.batch_size,
-                                    shuffle=True,
-                                    collate_fn=lambda x: preprocess_example(x, 'train'))
-
-    test_loader = DataLoader(dataset=test_data,
-                                pin_memory=True,
-                                num_workers=args.num_workers,
-                                batch_size=args.batch_size,
-                                shuffle=False,
-                                collate_fn=lambda x: preprocess_example(x, 'valid'))
+        test_loader = DataLoader(dataset=test_data,
+                                 pin_memory=True,
+                                 num_workers=args.num_workers,
+                                 batch_size=args.batch_size,
+                                 shuffle=False,
+                                 collate_fn=lambda x: preprocess_example(x, 'valid'))
 
 
-  # Declare Models  
+    # Declare Models  
+    encoder = ConformerEncoder(
+        d_input=args.d_input,
+        d_model=args.d_encoder,
+        num_layers=args.encoder_layers,
+        conv_kernel_size=args.conv_kernel_size, 
+        dropout=args.dropout,
+        feed_forward_residual_factor=args.feed_forward_residual_factor,
+        feed_forward_expansion_factor=args.feed_forward_expansion_factor,
+        num_heads=args.attention_heads)
   
-  encoder = ConformerEncoder(
-                      d_input=args.d_input,
-                      d_model=args.d_encoder,
-                      num_layers=args.encoder_layers,
-                      conv_kernel_size=args.conv_kernel_size, 
-                      dropout=args.dropout,
-                      feed_forward_residual_factor=args.feed_forward_residual_factor,
-                      feed_forward_expansion_factor=args.feed_forward_expansion_factor,
-                      num_heads=args.attention_heads)
-  
-  decoder = LSTMDecoder(
-                  d_encoder=args.d_encoder, 
-                  d_decoder=args.d_decoder, 
-                  num_layers=args.decoder_layers)
-  char_decoder = GreedyCharacterDecoder().eval()
-  criterion = nn.CTCLoss(blank=28, zero_infinity=True)
-  optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=5e-4, betas=(.9, .98), eps=1e-05 if args.use_amp else 1e-09, weight_decay=args.weight_decay)
-  scheduler = TransformerLrScheduler(optimizer, args.d_encoder, args.warmup_steps)
+    decoder = LSTMDecoder(
+        d_encoder=args.d_encoder, 
+        d_decoder=args.d_decoder, 
+        num_layers=args.decoder_layers)
+    char_decoder = GreedyCharacterDecoder().eval()
+    criterion = nn.CTCLoss(blank=28, zero_infinity=True)
+    optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=5e-4, betas=(.9, .98), eps=1e-05 if args.use_amp else 1e-09, weight_decay=args.weight_decay)
+    scheduler = TransformerLrScheduler(optimizer, args.d_encoder, args.warmup_steps)
 
-  # Print model size
-  model_size(encoder, 'Encoder')
-  model_size(decoder, 'Decoder')
+    # Print model size
+    model_size(encoder, 'Encoder')
+    model_size(decoder, 'Decoder')
 
-  gc.collect()
+    gc.collect()
 
-  # GPU Setup
-  if torch.cuda.is_available():
-    print('Using GPU')
-    gpu = True
-    torch.cuda.set_device(args.gpu)
-    criterion = criterion.cuda()
-    encoder = encoder.cuda()
-    decoder = decoder.cuda()
-    char_decoder = char_decoder.cuda()
-    torch.cuda.empty_cache()
-  else:
-    gpu = False
+    # GPU Setup
+    if torch.cuda.is_available():
+        print('Using GPU')
+        gpu = True
+        torch.cuda.set_device(args.gpu)
+        criterion = criterion.cuda()
+        encoder = encoder.cuda()
+        decoder = decoder.cuda()
+        char_decoder = char_decoder.cuda()
+        torch.cuda.empty_cache()
+    else:
+        gpu = False
 
-  # Mixed Precision Setup
-  if args.use_amp:
-    print('Using Mixed Precision')
-  grad_scaler = GradScaler(enabled=args.use_amp)
+    # Mixed Precision Setup
+    if args.use_amp:
+        print('Using Mixed Precision')
+    grad_scaler = GradScaler(enabled=args.use_amp)
 
-  # Initialize Checkpoint 
-  if args.load_checkpoint:
-    start_epoch, best_loss = load_checkpoint(encoder, decoder, optimizer, scheduler, os.path.join(args.output_path,'model_best.pt'))
-    print(f'Resuming training from checkpoint starting at epoch {start_epoch}.')
-  else:
-    start_epoch = 0
-    best_loss = float('inf')
+    # Initialize Checkpoint 
+    if args.load_checkpoint:
+        start_epoch, best_loss = load_checkpoint(encoder, decoder, optimizer, scheduler, os.path.join(args.output_path,'model_best.pt'))
+        print(f'Resuming training from checkpoint starting at epoch {start_epoch}.')
+    else:
+        start_epoch = 0
+        best_loss = float('inf')
 
-  # Train Loop
-  optimizer.zero_grad()
+    # Train Loop
+    optimizer.zero_grad()
 
-  # Initialize lists to store results
-  epochs = []
-  train_losses = []
-  valid_losses = []
-  train_wers = []
-  valid_wers = []
-  for epoch in range(start_epoch, args.epochs):
-    torch.cuda.empty_cache()
+    # Initialize lists to store results
+    epochs = []
+    train_losses = []
+    valid_losses = []
+    train_wers = []
+    valid_wers = []
+    for epoch in range(start_epoch, args.epochs):
+        torch.cuda.empty_cache()
 
-    #variational noise for regularization
-    add_model_noise(encoder, std=args.variational_noise_std, gpu=gpu)
-    add_model_noise(decoder, std=args.variational_noise_std, gpu=gpu)
+        #variational noise for regularization
+        add_model_noise(encoder, std=args.variational_noise_std, gpu=gpu)
+        add_model_noise(decoder, std=args.variational_noise_std, gpu=gpu)
 
-    # Train/Validation loops
-    wer, loss = train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=gpu) 
-    valid_wer, valid_loss = validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=gpu)
-    print(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}')  
-    # Save results to file
-    save_results_to_file(epoch, wer, loss, valid_wer, valid_loss, os.path.join(args.output_path,'result.txt'))
+        # Train/Validation loops
+        wer, loss = train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=gpu) 
+        valid_wer, valid_loss = validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=gpu)
+        print(f'Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}')  
+        # Save results to file
+        save_results_to_file(epoch, wer, loss, valid_wer, valid_loss, os.path.join(args.output_path,'result.txt'))
     
-    # Store results for plotting
-    epochs.append(epoch)
-    train_losses.append(loss)
-    valid_losses.append(valid_loss)
-    train_wers.append(wer)
-    valid_wers.append(valid_wer)
+        # Store results for plotting
+        epochs.append(epoch)
+        train_losses.append(loss)
+        valid_losses.append(valid_loss)
+        train_wers.append(wer)
+        valid_wers.append(valid_wer)
 
-    if epoch %20 ==0:
-      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,f'{epoch}.pt'))
-    # Save checkpoint 
-    if valid_loss <= best_loss:
-      best_loss = valid_loss
-      save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,'model_best.pt'))
+        if epoch % 20 == 0:
+            save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,f'{epoch}.pt'))
+        # Save checkpoint 
+        if valid_loss <= best_loss:
+            best_loss = valid_loss
+            save_checkpoint(encoder, decoder, optimizer, scheduler, valid_loss, epoch+1, os.path.join(args.output_path,'model_best.pt'))
 
-  plot_results(epochs, train_losses, valid_losses, train_wers, valid_wers, os.path.join(args.output_path,"result.png"))
+    plot_results(epochs, train_losses, valid_losses, train_wers, valid_wers, os.path.join(args.output_path,"result.png"))
 
 def train(encoder, decoder, char_decoder, optimizer, scheduler, criterion, grad_scaler, train_loader, args, gpu=True):
-  ''' Run a single training epoch '''
+    ''' Run a single training epoch '''
 
-  wer = WordErrorRate()
-  error_rate = AvgMeter()
-  avg_loss = AvgMeter()
-  text_transform = TextTransform()
+    wer = WordErrorRate()
+    error_rate = AvgMeter()
+    avg_loss = AvgMeter()
+    text_transform = TextTransform()
 
-  encoder.train()
-  decoder.train()
-  for i, batch in enumerate(train_loader):
-    scheduler.step()
-    gc.collect()
-    spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
+    encoder.train()
+    decoder.train()
+
+    for i, batch in enumerate(train_loader):
+        scheduler.step()
+        gc.collect()
+        spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
     
-    # Move to GPU
-    if gpu:
-      spectrograms = spectrograms.cuda()
-      labels = labels.cuda()
-      input_lengths = torch.tensor(input_lengths).cuda()
-      label_lengths = torch.tensor(label_lengths).cuda()
-      mask = mask.cuda()
+        # Move to GPU
+        if gpu:
+            spectrograms = spectrograms.cuda()
+            labels = labels.cuda()
+            input_lengths = torch.tensor(input_lengths).cuda()
+            label_lengths = torch.tensor(label_lengths).cuda()
+            mask = mask.cuda()
     
-    # Update models
-    with autocast(enabled=args.use_amp):
-      outputs = encoder(spectrograms, mask)
-      outputs = decoder(outputs)
-      loss = criterion(F.log_softmax(outputs, dim=-1).transpose(0, 1), labels, input_lengths, label_lengths)
-    grad_scaler.scale(loss).backward()
-    if (i+1) % args.accumulate_iters == 0:
-      grad_scaler.step(optimizer)
-      grad_scaler.update()
-      optimizer.zero_grad()
-    avg_loss.update(loss.detach().item())
+        # Update models
+        with autocast(enabled=args.use_amp):
+            outputs = encoder(spectrograms, mask)
+            outputs = decoder(outputs)
+            loss = criterion(F.log_softmax(outputs, dim=-1).transpose(0, 1), labels, input_lengths, label_lengths)
+        grad_scaler.scale(loss).backward()
+        if (i+1) % args.accumulate_iters == 0:
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
+            optimizer.zero_grad()
+        avg_loss.update(loss.detach().item())
 
-    # Predict words, compute WER
-    inds = char_decoder(outputs.detach())
-    predictions = []
-    for sample in inds:
-      predictions.append(text_transform.int_to_text(sample))
-    error_rate.update(wer(predictions, references) * 100)
+        # Predict words, compute WER
+        inds = char_decoder(outputs.detach())
+        predictions = []
+        for sample in inds:
+            predictions.append(text_transform.int_to_text(sample))
+        error_rate.update(wer(predictions, references) * 100)
 
-    # Print metrics and predictions 
-    if (i+1) % args.report_freq == 0:
-      print(f'Step {i+1} - Avg WER: {error_rate.avg}%, Avg Loss: {avg_loss.avg}')   
-      print('Sample Predictions: ', predictions)
-    del spectrograms, labels, input_lengths, label_lengths, references, outputs, inds, predictions
-  return error_rate.avg, avg_loss.avg
+        # Print metrics and predictions 
+        if (i+1) % args.report_freq == 0:
+            print(f'Step {i+1} - Avg WER: {error_rate.avg}%, Avg Loss: {avg_loss.avg}')   
+            print('Sample Predictions: ', predictions)
+        del spectrograms, labels, input_lengths, label_lengths, references, outputs, inds, predictions
+    return error_rate.avg, avg_loss.avg
 
 def validate(encoder, decoder, char_decoder, criterion, test_loader, args, gpu=True):
-  ''' Evaluate model on test dataset. '''
+    ''' Evaluate model on test dataset. '''
 
-  avg_loss = AvgMeter()
-  error_rate = AvgMeter()
-  wer = WordErrorRate()
-  text_transform = TextTransform()
+    avg_loss = AvgMeter()
+    error_rate = AvgMeter()
+    wer = WordErrorRate()
+    text_transform = TextTransform()
 
-  encoder.eval()
-  decoder.eval()
-  for i, batch in enumerate(test_loader):
-    gc.collect()
-    spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
+    encoder.eval()
+    decoder.eval()
+    for i, batch in enumerate(test_loader):
+        gc.collect()
+        spectrograms, labels, input_lengths, label_lengths, references, mask = batch 
   
-    # Move to GPU
-    if gpu:
-      spectrograms = spectrograms.cuda()
-      labels = labels.cuda()
-      input_lengths = torch.tensor(input_lengths).cuda()
-      label_lengths = torch.tensor(label_lengths).cuda()
-      mask = mask.cuda()
+        # Move to GPU
+        if gpu:
+            spectrograms = spectrograms.cuda()
+            labels = labels.cuda()
+            input_lengths = torch.tensor(input_lengths).cuda()
+            label_lengths = torch.tensor(label_lengths).cuda()
+            mask = mask.cuda()
 
-    with torch.no_grad():
-      with autocast(enabled=args.use_amp):
-        outputs = encoder(spectrograms, mask)
-        outputs = decoder(outputs)
-        loss = criterion(F.log_softmax(outputs, dim=-1).transpose(0, 1), labels, input_lengths, label_lengths)
-      avg_loss.update(loss.item())
+        with torch.no_grad():
+            with autocast(enabled=args.use_amp):
+                outputs = encoder(spectrograms, mask)
+                outputs = decoder(outputs)
+                loss = criterion(F.log_softmax(outputs, dim=-1).transpose(0, 1), labels, input_lengths, label_lengths)
+            avg_loss.update(loss.item())
 
-      inds = char_decoder(outputs.detach())
-      predictions = []
-      for sample in inds:
-        predictions.append(text_transform.int_to_text(sample))
-      error_rate.update(wer(predictions, references) * 100)
-  return error_rate.avg, avg_loss.avg
+        inds = char_decoder(outputs.detach())
+        predictions = []
+        for sample in inds:
+            predictions.append(text_transform.int_to_text(sample))
+        error_rate.update(wer(predictions, references) * 100)
+    return error_rate.avg, avg_loss.avg
 
 
 if __name__ == '__main__':
-  main() 
+    main() 
