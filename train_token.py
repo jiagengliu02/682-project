@@ -7,9 +7,9 @@ import torch.nn.functional as F
 
 from torch import nn
 from torchmetrics.text.wer import WordErrorRate
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.cuda.amp import autocast, GradScaler
-from model import ConformerEncoder, LSTMDecoder
+from model import ConformerEncoder, LSTMDecoder, LinearDecoder
 from utils import *
 
 import matplotlib.pyplot as plt
@@ -74,24 +74,22 @@ def get_parser():
         "--d_decoder", type=int, default=320, help="dimension of the decoder"
     )
     parser.add_argument(
-        "--encoder_layers",
-        type=int,
-        default=16,
+        "--linear_decoder", action="store_true", default=False,
+    )
+    parser.add_argument(
+        "--encoder_layers", type=int, default=16,
         help="number of conformer blocks in the encoder",
     )
     parser.add_argument(
-        "--decoder_layers", type=int, default=1, help="number of decoder layers"
+        "--decoder_layers", type=int, default=1,
+        help="number of decoder layers"
     )
     parser.add_argument(
-        "--conv_kernel_size",
-        type=int,
-        default=31,
+        "--conv_kernel_size", type=int, default=31,
         help="size of kernel for conformer convolution blocks",
     )
     parser.add_argument(
-        "--feed_forward_expansion_factor",
-        type=int,
-        default=4,
+        "--feed_forward_expansion_factor", type=int, default=4,
         help="expansion factor for conformer feed forward blocks",
     )
     parser.add_argument(
@@ -101,7 +99,8 @@ def get_parser():
         help="residual factor for conformer feed forward blocks",
     )
     parser.add_argument(
-        "--dropout", type=float, default=0.1, help="dropout factor for conformer model"
+        "--dropout", type=float, default=0.1,
+        help="dropout factor for conformer model"
     )
     parser.add_argument(
         "--weight_decay",
@@ -117,6 +116,9 @@ def get_parser():
     )
     parser.add_argument(
         "--num_workers", type=int, default=2, help="num_workers for the dataloader"
+    )
+    parser.add_argument(
+        "--num_data", type=int, default=0, help="number of data for the dataloader"
     )
     parser.add_argument(
         "--smart_batch",
@@ -153,7 +155,7 @@ def save_results_to_file(
 
 
 def plot_results(
-    epochs, train_losses, valid_losses, train_wers, valid_wers, output_path
+    epochs, train_losses, valid_losses, train_wers, valid_wers, output_dir
 ):
     plt.figure(figsize=(12, 6))
 
@@ -174,8 +176,9 @@ def plot_results(
     plt.title("WER over Epochs")
 
     plt.tight_layout()
-    plt.savefig(output_path)
+    plt.savefig(output_dir)
     plt.close()
+
 
 def load_data(args):
     # Load Data
@@ -187,13 +190,13 @@ def load_data(args):
     test_data = torchaudio.datasets.LIBRISPEECH(
         root=args.data_dir, url=args.test_set, download=True
     )
+
+    if args.num_data > 0:
+        train_data = Subset(train_data, range(args.num_data))
+        test_data = Subset(test_data, range(args.num_data))
+
     train_preprocessor = Preprocessor(args.train_set, args.data_dir, args.tokenize)
     test_preprocessor = Preprocessor(args.test_set, args.data_dir, args.tokenize)
-
-    print(train_data[0])
-
-    if not os.path.isdir(args.output_path):
-        os.mkdir(args.output_path)
 
     if args.smart_batch:
         print("Sorting training data for smart batching...")
@@ -244,6 +247,9 @@ def load_data(args):
 def main():
     parser = get_parser()
     args = parser.parse_args()
+    
+    output_dir = os.path.join(args.output_path, f'Token{args.tokenize}-Linear{args.linear_decoder}-Data{args.num_data}')
+    os.makedirs(output_dir, exist_ok=True)
     train_loader, test_loader = load_data(args)
 
     encoder = ConformerEncoder(
@@ -256,22 +262,30 @@ def main():
         feed_forward_expansion_factor=args.feed_forward_expansion_factor,
         num_heads=args.attention_heads,
     )
+
     if args.tokenize:
-        decoder = LSTMDecoder(
+        num_classes = 50257
+        blank_id = 50256
+    else:
+        num_classes = 29
+        blank_id = 28
+
+    if args.linear_decoder:
+        decoder = LinearDecoder(
             d_encoder=args.d_encoder,
             d_decoder=args.d_decoder,
-            num_layers=args.decoder_layers,
-            num_classes=50257,
+            num_classes=num_classes,
         )
-        criterion = nn.CTCLoss(blank=50256, zero_infinity=True)
     else:
         decoder = LSTMDecoder(
             d_encoder=args.d_encoder,
             d_decoder=args.d_decoder,
             num_layers=args.decoder_layers,
-            num_classes=29,
+            num_classes=num_classes,
         )
-        criterion = nn.CTCLoss(blank=28, zero_infinity=True)
+    criterion = nn.CTCLoss(blank=blank_id, zero_infinity=True)
+
+
     char_decoder = GreedyCharacterDecoder().eval()
     optimizer = torch.optim.AdamW(
         list(encoder.parameters()) + list(decoder.parameters()),
@@ -310,11 +324,8 @@ def main():
     # Initialize Checkpoint
     if args.load_checkpoint:
         start_epoch, best_loss = load_checkpoint(
-            encoder,
-            decoder,
-            optimizer,
-            scheduler,
-            os.path.join(args.output_path, "model_best.pt"),
+            encoder, decoder, optimizer, scheduler,
+            os.path.join(output_dir, "model_best.pt"),
         )
         print(f"Resuming training from checkpoint starting at epoch {start_epoch}.")
     else:
@@ -326,10 +337,8 @@ def main():
 
     # Initialize lists to store results
     epochs = []
-    train_losses = []
-    valid_losses = []
-    train_wers = []
-    valid_wers = []
+    train_losses, train_wers = [], []
+    valid_losses, valid_wers = [], []
     for epoch in range(start_epoch, args.epochs):
         torch.cuda.empty_cache()
 
@@ -339,33 +348,25 @@ def main():
 
         # Train/Validation loops
         wer, loss = train(
-            encoder,
-            decoder,
-            char_decoder,
-            optimizer,
-            scheduler,
-            criterion,
-            grad_scaler,
-            train_loader,
-            args,
-            tokenizer,
+            encoder, decoder, char_decoder,
+            optimizer, scheduler, grad_scaler,
+            criterion, train_loader,
+            args, tokenizer,
             gpu=gpu,
-            tokenize=args.tokenize,
         )
         valid_wer, valid_loss = validate(
-            encoder, decoder, char_decoder, criterion, test_loader, args, tokenizer, gpu=gpu, tokenize=args.tokenize,
+            encoder, decoder, char_decoder,
+            criterion, test_loader,
+            args, tokenizer, output_dir,
+            gpu=gpu,
         )
         print(
             f"Epoch {epoch} - Valid WER: {valid_wer}%, Valid Loss: {valid_loss}, Train WER: {wer}%, Train Loss: {loss}"
         )
         # Save results to file
         save_results_to_file(
-            epoch,
-            wer,
-            loss,
-            valid_wer,
-            valid_loss,
-            os.path.join(args.output_path, "result.txt"),
+            epoch, wer, loss, valid_wer, valid_loss,
+            os.path.join(output_dir, "result.txt"),
         )
 
         # Store results for plotting
@@ -377,50 +378,29 @@ def main():
 
         if epoch % 20 == 0:
             save_checkpoint(
-                encoder,
-                decoder,
-                optimizer,
-                scheduler,
-                valid_loss,
-                epoch + 1,
-                os.path.join(args.output_path, f"{epoch}.pt"),
+                encoder, decoder, optimizer, scheduler, valid_loss, epoch + 1,
+                os.path.join(output_dir, f"{epoch}.pt"),
             )
         # Save checkpoint
         if valid_loss <= best_loss:
             best_loss = valid_loss
             save_checkpoint(
-                encoder,
-                decoder,
-                optimizer,
-                scheduler,
-                valid_loss,
-                epoch + 1,
-                os.path.join(args.output_path, "model_best.pt"),
+                encoder, decoder, optimizer, scheduler, valid_loss, epoch + 1,
+                os.path.join(output_dir, "model_best.pt"),
             )
 
     plot_results(
-        epochs,
-        train_losses,
-        valid_losses,
-        train_wers,
-        valid_wers,
-        os.path.join(args.output_path, "result.png"),
+        epochs, train_losses, valid_losses, train_wers, valid_wers,
+        os.path.join(output_dir, "result.png"),
     )
 
 
 def train(
-    encoder,
-    decoder,
-    char_decoder,
-    optimizer,
-    scheduler,
-    criterion,
-    grad_scaler,
-    train_loader,
-    args,
-    tokenizer,
+    encoder, decoder, char_decoder,
+    optimizer, scheduler, grad_scaler,
+    criterion, train_loader,
+    args, tokenizer,
     gpu=True,
-    tokenize=True,
 ):
     """Run a single training epoch"""
 
@@ -448,16 +428,15 @@ def train(
         with autocast(enabled=args.use_amp):
             outputs = encoder(spectrograms, mask)
             outputs = decoder(outputs)
-            # print(outputs.shape)
-            # print(F.log_softmax(outputs, dim=-1).transpose(0, 1).shape)
-            # print(input_lengths//4-1)
-            # print(label_lengths)
+            outputs = F.log_softmax(outputs, dim=-1)
+
             loss = criterion(
-                F.log_softmax(outputs, dim=-1).transpose(0, 1),
+                outputs.transpose(0, 1),
                 labels,
                 ((input_lengths - 1) // 2 - 1) // 2, # changed
                 label_lengths,
             )
+
         grad_scaler.scale(loss).backward()
         if (i + 1) % args.accumulate_iters == 0:
             grad_scaler.step(optimizer)
@@ -466,7 +445,7 @@ def train(
         avg_loss.update(loss.detach().item())
 
         predictions = []
-        if not tokenize:
+        if not args.tokenize:
             # Predict words, compute WER
             inds = char_decoder(outputs.detach())
             
@@ -474,7 +453,7 @@ def train(
                 predictions.append(text_transform.int_to_text(sample))
             error_rate.update(wer(predictions, references) * 100)
         else:
-            inds = torch.argmax(outputs.detach(), dim=-1) # 将token索引转换为实际的token 
+            inds = torch.argmax(outputs.detach(), dim=-1)
             for sample in inds:
                 predicted_token = tokenizer.decode(sample, skip_special_tokens=True)
                 predictions.append(predicted_token)
@@ -482,8 +461,12 @@ def train(
 
         # Print metrics and predictions
         if (i + 1) % args.report_freq == 0:
-            print(f"Step {i+1} - Avg WER: {error_rate.avg}%, Avg Loss: {avg_loss.avg}")
-            # print("Sample Predictions: ", predictions)
+            # print('\t', outputs.shape, ((input_lengths - 1) // 2 - 1) // 2, input_lengths)
+            # print('\t', labels.shape, label_lengths)
+            print(f"Step {i + 1} - Avg WER: {error_rate.avg}%, Avg Loss: {avg_loss.avg}")
+            print("Sample Predictions: ")
+            for j in range(5):
+                print('\t', predictions[j], references[j])
         del (
             spectrograms,
             labels,
@@ -497,12 +480,17 @@ def train(
     return error_rate.avg, avg_loss.avg
 
 
-def validate(encoder, decoder, char_decoder, criterion, test_loader, args, tokenizer, gpu=True, tokenize=True,):
+def validate(
+    encoder, decoder, char_decoder,
+    criterion, test_loader,
+    args, tokenizer, output_dir,
+    gpu=True
+):
     """Evaluate model on test dataset."""
 
+    wer = WordErrorRate()
     avg_loss = AvgMeter()
     error_rate = AvgMeter()
-    wer = WordErrorRate()
     text_transform = TextTransform()
 
     encoder.eval()
@@ -515,37 +503,38 @@ def validate(encoder, decoder, char_decoder, criterion, test_loader, args, token
         if gpu:
             spectrograms = spectrograms.cuda()
             labels = labels.cuda()
-            input_lengths = torch.tensor(input_lengths).cuda()
-            label_lengths = torch.tensor(label_lengths).cuda()
+            input_lengths = input_lengths.cuda()
+            label_lengths = label_lengths.cuda()
             mask = mask.cuda()
 
         with torch.no_grad():
             with autocast(enabled=args.use_amp):
                 outputs = encoder(spectrograms, mask)
                 outputs = decoder(outputs)
+                outputs = F.log_softmax(outputs, dim=-1)
+
                 loss = criterion(
-                    F.log_softmax(outputs, dim=-1).transpose(0, 1),
+                    outputs.transpose(0, 1),
                     labels,
-                    input_lengths//4-1,
+                    ((input_lengths - 1) // 2 - 1) // 2, # changed
                     label_lengths,
                 )
+
             avg_loss.update(loss.item())
 
             predictions = []
-            if not tokenize:
-            # Predict words, compute WER
+            if not args.tokenize:
+                # Predict words, compute WER
                 inds = char_decoder(outputs.detach())
                 
                 for sample in inds:
                     predictions.append(text_transform.int_to_text(sample))
                 error_rate.update(wer(predictions, references) * 100)
             else:
-                inds = torch.argmax(outputs.detach(), dim=-1) # 将token索引转换为实际的token 
+                inds = torch.argmax(outputs.detach(), dim=-1)
                 for sample in inds:
                     predicted_token = tokenizer.decode(sample, skip_special_tokens=True)
-                    # print("!!!",predicted_token)
                     predictions.append(predicted_token)
-                # print("predictions",predictions)
                 error_rate.update(wer(predictions, references) * 100)
 
             # inds = char_decoder(outputs.detach())
@@ -553,12 +542,10 @@ def validate(encoder, decoder, char_decoder, criterion, test_loader, args, token
             # for sample in inds:
             #     predictions.append(text_transform.int_to_text(sample))
             # error_rate.update(wer(predictions, references) * 100)
-    with open(os.path.join(args.output_path,"result.txt"), "a") as f:
-        f.write(
-            f"predictions:{predictions}"+"\n"+f"references:{references}"
-        )
-    return error_rate.avg, avg_loss.avg
 
+    with open(os.path.join(output_dir, "result.txt"), "a") as f:
+        f.write(f"predictions: {predictions}" + "\n" + f"references: {references}")
+    return error_rate.avg, avg_loss.avg
 
 if __name__ == "__main__":
     main()

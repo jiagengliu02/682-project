@@ -1,4 +1,4 @@
-from transformers import GPT2Tokenizer
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
 import torchaudio
 from tqdm import tqdm
 import os

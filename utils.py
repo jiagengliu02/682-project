@@ -92,6 +92,7 @@ class Preprocessor:
             token_label = torch.Tensor(self.token_ids[mark])
 
             spectrograms.append(spec)
+            references.append(text)
             labels.append(label)
             token_labels.append(token_label)
 
@@ -109,6 +110,7 @@ class Preprocessor:
         mask = torch.ones(spectrograms.shape[0], spectrograms.shape[1], spectrograms.shape[1])
         for i, l in enumerate(input_lengths):
             mask[i, :, :l] = 0
+            # mask[i, :, :((l - 1) // 2 - 1) // 2] = 0
         
         if self.tokenize:
             return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()

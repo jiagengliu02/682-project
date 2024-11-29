@@ -228,14 +228,12 @@ def load_data(args):
     return train_loader, test_loader
 
 def main():
-    # Load Data
     parser = get_parser()
     args = parser.parse_args()
 
     train_loader, test_loader = load_data(args)
 
     # Declare Models
-
     encoder = ConformerEncoder(
         d_input=args.d_input,
         d_model=args.d_encoder,
