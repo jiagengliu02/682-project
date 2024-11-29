@@ -450,7 +450,7 @@ class LinearDecoder(nn.Module):
     def __init__(self, d_encoder=144, d_decoder=320, num_classes=29):
         super(LinearDecoder, self).__init__()
         self.linear1 = nn.Linear(d_encoder, d_decoder)
-        self.linear2 = nn.Linear(d_decoder, num_classes)
+        self.linear2 = nn.Linear(d_decoder, num_classes, bias=False)
 
     def forward(self, x):
         x = self.linear1(x)
