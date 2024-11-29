@@ -466,7 +466,7 @@ def train(
             print(f"Step {i + 1} - Avg WER: {error_rate.avg}%, Avg Loss: {avg_loss.avg}")
             print("Sample Predictions: ")
             for j in range(5):
-                print('\t', predictions[j], references[j])
+                print(f"\t Prediction: [{predictions[j]}]\t Reference: [{references[j]}]")
         del (
             spectrograms,
             labels,
