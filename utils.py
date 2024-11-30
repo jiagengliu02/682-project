@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 class TextTransform:
     """Map characters to integers and vice versa"""
+
     def __init__(self):
         self.char_map = {chr(char): i for i, char in enumerate(range(65, 91))}
         self.char_map["'"] = 26
@@ -23,24 +24,15 @@ class TextTransform:
         return "".join([self.index_map[i] for i in labels if i != 28])
 
 
-def get_audio_transforms():
-    time_masks = [
-        torchaudio.transforms.TimeMasking(time_mask_param=15, p=0.05) for _ in range(10)
-    ]
-    train_audio_transform = nn.Sequential(
-        torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_mels=80, hop_length=160),
-        torchaudio.transforms.FrequencyMasking(freq_mask_param=27),
-        *time_masks,
-    )
-    valid_audio_transform = torchaudio.transforms.MelSpectrogram(
-        sample_rate=16000, n_mels=80, hop_length=160
-    )
-
-    return train_audio_transform, valid_audio_transform
+# def get_audio_transforms():
+#     train_audio_transform = 
+#     valid_audio_transform = 
+#     return train_audio_transform, valid_audio_transform
 
 
-class BatchSampler(object):
+class BatchSampler:
     """Sample contiguous, sorted indices. Leads to less padding and faster training."""
+
     def __init__(self, sorted_inds, batch_size):
         self.sorted_inds = sorted_inds
         self.batch_size = batch_size
@@ -54,39 +46,123 @@ class BatchSampler(object):
             del inds[start_ind : start_ind + to_take]
             yield batch_inds
 
-def preprocess_example(data, data_type="train"):
-    """Process raw LibriSpeech examples"""
-    text_transform = TextTransform()
-    train_audio_transform, valid_audio_transform = get_audio_transforms()
-    spectrograms, labels, references, input_lengths, label_lengths = [], [], [], [], []
+# def get_flac_content(file_path, target_flac): 
+#     with open(file_path, 'r') as file: 
+#         for line in file: 
+#             if line.startswith(target_flac): 
+#                 # 提取方括号内的内容 
+#                 content = line.split(': ')[1].strip() # 将字符串转换为列表 
+#                 content_list = eval(content) 
+#                 return content_list 
+#     return None
 
-    for waveform, _, utterance, _, _, _ in data:
-        spec = (
-            train_audio_transform(waveform).squeeze(0).transpose(0, 1) if data_type == "train" else
-            valid_audio_transform(waveform).squeeze(0).transpose(0, 1)
-        )
-        spectrograms.append(spec)
-        labels.append(torch.Tensor(text_transform.text_to_int(utterance)))
-        references.append(utterance)
-        # input_lengths.append(((spec.shape[0] - 1) // 2 - 1) // 2)
-        input_lengths.append(spec.shape[0])
-        label_lengths.append(len(labels[-1]))
+class Preprocessor:
+    def __init__(self, dataset, data_dir, tokenize):
+        self.data_type = dataset
+        self.tokenize = tokenize
+        self.text_transform = TextTransform()
+        if 'train' in dataset:
+            self.audio_transform = nn.Sequential(
+                torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_mels=80, hop_length=160),
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=27),
+                *[torchaudio.transforms.TimeMasking(time_mask_param=15, p=0.05) for _ in range(10)],
+            )
+        else:
+            self.audio_transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=16000, n_mels=80, hop_length=160
+            )
 
-    spectrograms = nn.utils.rnn.pad_sequence(spectrograms, batch_first=True)
-    labels = nn.utils.rnn.pad_sequence(labels, batch_first=True)
+        self.token_ids = {}
+        file = open(os.path.join(data_dir, f"{dataset}-ids.txt"), "r")
+        for line in file:
+            mark, ids = line.split(': ')
+            self.token_ids[mark.strip()] = eval(ids.strip())
+        file.close()
+    
+    def preprocess(self, data):
+        spectrograms, token_labels, labels, references = [], [], [], []
+        input_lengths, label_lengths, token_label_lengths = [], [], []
+        for item in data:
+            waveform = item[0]
+            text = item[2]
+            mark = f'{item[3]}-{item[4]}-{item[5]}'
 
-    mask = torch.ones(spectrograms.shape[0], spectrograms.shape[1], spectrograms.shape[1])
-    for i, l in enumerate(input_lengths):
-        mask[i, :, :l] = 0
+            spec = self.audio_transform(waveform).squeeze(0).transpose(0, 1)
+            label = torch.Tensor(self.text_transform.text_to_int(text))
+            token_label = torch.Tensor(self.token_ids[mark])
 
-    return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
+            spectrograms.append(spec)
+            references.append(text)
+            labels.append(label)
+            token_labels.append(token_label)
 
+            input_lengths.append(spec.shape[0])
+            label_lengths.append(label.shape[0])
+            token_label_lengths.append(token_label.shape[0])
+        
+        spectrograms = nn.utils.rnn.pad_sequence(spectrograms, batch_first=True)
+        labels = nn.utils.rnn.pad_sequence(labels, batch_first=True)
+        token_labels = nn.utils.rnn.pad_sequence(token_labels, batch_first=True)
+        input_lengths = torch.Tensor(input_lengths).type(torch.int)
+        label_lengths = torch.Tensor(label_lengths).type(torch.int)
+        token_label_lengths = torch.Tensor(token_label_lengths).type(torch.int)
 
-class TransformerLrScheduler():
+        mask = torch.ones(spectrograms.shape[0], spectrograms.shape[1], spectrograms.shape[1])
+        for i, l in enumerate(input_lengths):
+            mask[i, :, :l] = 0
+            # mask[i, :, :((l - 1) // 2 - 1) // 2] = 0
+        
+        if self.tokenize:
+            return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()
+        else:
+            return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
+
+# def preprocess_example(data, data_type="train", tokenize=True):
+#     """Process raw LibriSpeech examples"""
+#     # train_audio_transform, valid_audio_transform = get_audio_transforms()
+#     # spectrograms, token_labels, labels, references, input_lengths, label_lengths, token_label_lengths = [], [], [], [], [], [], []
+
+#     for waveform, path, _, utterance, _, _, _ in data:
+#         spec = (
+#             train_audio_transform(waveform).squeeze(0).transpose(0, 1)
+#             if data_type == "train"
+#             else valid_audio_transform(waveform).squeeze(0).transpose(0, 1)
+#         )
+#         spectrograms.append(spec)
+#         # print("path", path)   #path test-clean/7021/85628/7021-85628-0013.flac
+#         # print("utterance", utterance) #utterance THE PARIS PLANT LIKE THAT AT THE CRYSTAL PALACE WAS A TEMPORARY EXHIBIT
+#         dir_path = os.path.dirname(path)
+#         file_name = os.path.basename(path)
+#         token_label_path = os.path.join("./data/LibriSpeech", dir_path, "token_ids.txt")
+#         token_label_list = get_flac_content(file_path=token_label_path, target_flac=file_name)
+#         token_labels.append(torch.Tensor(token_label_list))
+#         labels.append(torch.Tensor(text_transform.text_to_int(utterance)))
+
+#         references.append(utterance)
+#         input_lengths.append(((spec.shape[0] - 1) // 2 - 1) // 2)
+#         label_lengths.append(len(labels[-1]))
+#         token_label_lengths.append(len(token_labels[-1]))
+
+#     spectrograms = nn.utils.rnn.pad_sequence(spectrograms, batch_first=True)
+#     labels = nn.utils.rnn.pad_sequence(labels, batch_first=True)
+#     token_labels = nn.utils.rnn.pad_sequence(token_labels, batch_first=True)
+
+#     mask = torch.ones(spectrograms.shape[0], spectrograms.shape[1], spectrograms.shape[1])
+#     for i, l in enumerate(input_lengths):
+#         mask[i, :, :l] = 0
+#     if tokenize:
+#         return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()
+
+#     return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
+
+   
+
+class TransformerLrScheduler:
     """
     Transformer LR scheduler from "Attention is all you need." https://arxiv.org/abs/1706.03762
     multiplier and warmup_steps taken from conformer paper: https://arxiv.org/abs/2005.08100
     """
+
     def __init__(self, optimizer, d_model, warmup_steps, multiplier=5):
         self._optimizer = optimizer
         self.d_model = d_model
@@ -106,6 +182,7 @@ class TransformerLrScheduler():
             * (self.d_model**-0.5)
             * min(self.n_steps ** (-0.5), self.n_steps * (self.warmup_steps ** (-1.5)))
         )
+
 
 def model_size(model, name):
     """Print model size in num_params and MB"""

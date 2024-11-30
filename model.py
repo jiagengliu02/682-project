@@ -257,9 +257,7 @@ class Conv2dSubsampling(nn.Module):
         self.module = nn.Sequential(
             nn.Conv2d(in_channels=1, out_channels=d_model, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(
-                in_channels=d_model, out_channels=d_model, kernel_size=3, stride=2
-            ),
+            nn.Conv2d(in_channels=d_model, out_channels=d_model, kernel_size=3, stride=2),
             nn.ReLU(),
         )
 
@@ -429,4 +427,32 @@ class LSTMDecoder(nn.Module):
     def forward(self, x):
         x, _ = self.lstm(x)
         logits = self.linear(x)
+        return logits
+
+
+class LinearDecoder(nn.Module):
+    """
+    Linear Decoder
+
+    Parameters:
+      d_encoder (int): Output dimension of the encoder
+      d_decoder (int): Hidden dimension of the decoder
+      num_classes (int): Number of output classes to predict
+
+    Inputs:
+      x (Tensor): (batch_size, time, d_encoder)
+
+    Outputs:
+      Tensor (batch_size, time, num_classes): Class prediction logits
+
+    """
+
+    def __init__(self, d_encoder=144, d_decoder=320, num_classes=29):
+        super(LinearDecoder, self).__init__()
+        self.linear1 = nn.Linear(d_encoder, d_decoder)
+        self.linear2 = nn.Linear(d_decoder, num_classes, bias=False)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        logits = self.linear2(x)
         return logits

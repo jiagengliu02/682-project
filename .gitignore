@@ -1,3 +1,4 @@
 data/
 environments/
 output/
+**/__pycache__/**
