@@ -24,12 +24,6 @@ class TextTransform:
         return "".join([self.index_map[i] for i in labels if i != 28])
 
 
-# def get_audio_transforms():
-#     train_audio_transform = 
-#     valid_audio_transform = 
-#     return train_audio_transform, valid_audio_transform
-
-
 class BatchSampler:
     """Sample contiguous, sorted indices. Leads to less padding and faster training."""
 
@@ -46,15 +40,6 @@ class BatchSampler:
             del inds[start_ind : start_ind + to_take]
             yield batch_inds
 
-# def get_flac_content(file_path, target_flac): 
-#     with open(file_path, 'r') as file: 
-#         for line in file: 
-#             if line.startswith(target_flac): 
-#                 # 提取方括号内的内容 
-#                 content = line.split(': ')[1].strip() # 将字符串转换为列表 
-#                 content_list = eval(content) 
-#                 return content_list 
-#     return None
 
 class Preprocessor:
     def __init__(self, dataset, data_dir, tokenize):
@@ -88,8 +73,8 @@ class Preprocessor:
             mark = f'{item[3]}-{item[4]}-{item[5]}'
 
             spec = self.audio_transform(waveform).squeeze(0).transpose(0, 1)
-            label = torch.Tensor(self.text_transform.text_to_int(text))
-            token_label = torch.Tensor(self.token_ids[mark])
+            label = torch.Tensor(self.text_transform.text_to_int(text)).type(torch.int)
+            token_label = torch.Tensor(self.token_ids[mark]).type(torch.int)
 
             spectrograms.append(spec)
             references.append(text)
@@ -99,7 +84,7 @@ class Preprocessor:
             input_lengths.append(spec.shape[0])
             label_lengths.append(label.shape[0])
             token_label_lengths.append(token_label.shape[0])
-        
+
         spectrograms = nn.utils.rnn.pad_sequence(spectrograms, batch_first=True)
         labels = nn.utils.rnn.pad_sequence(labels, batch_first=True)
         token_labels = nn.utils.rnn.pad_sequence(token_labels, batch_first=True)
@@ -116,45 +101,6 @@ class Preprocessor:
             return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()
         else:
             return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
-
-# def preprocess_example(data, data_type="train", tokenize=True):
-#     """Process raw LibriSpeech examples"""
-#     # train_audio_transform, valid_audio_transform = get_audio_transforms()
-#     # spectrograms, token_labels, labels, references, input_lengths, label_lengths, token_label_lengths = [], [], [], [], [], [], []
-
-#     for waveform, path, _, utterance, _, _, _ in data:
-#         spec = (
-#             train_audio_transform(waveform).squeeze(0).transpose(0, 1)
-#             if data_type == "train"
-#             else valid_audio_transform(waveform).squeeze(0).transpose(0, 1)
-#         )
-#         spectrograms.append(spec)
-#         # print("path", path)   #path test-clean/7021/85628/7021-85628-0013.flac
-#         # print("utterance", utterance) #utterance THE PARIS PLANT LIKE THAT AT THE CRYSTAL PALACE WAS A TEMPORARY EXHIBIT
-#         dir_path = os.path.dirname(path)
-#         file_name = os.path.basename(path)
-#         token_label_path = os.path.join("./data/LibriSpeech", dir_path, "token_ids.txt")
-#         token_label_list = get_flac_content(file_path=token_label_path, target_flac=file_name)
-#         token_labels.append(torch.Tensor(token_label_list))
-#         labels.append(torch.Tensor(text_transform.text_to_int(utterance)))
-
-#         references.append(utterance)
-#         input_lengths.append(((spec.shape[0] - 1) // 2 - 1) // 2)
-#         label_lengths.append(len(labels[-1]))
-#         token_label_lengths.append(len(token_labels[-1]))
-
-#     spectrograms = nn.utils.rnn.pad_sequence(spectrograms, batch_first=True)
-#     labels = nn.utils.rnn.pad_sequence(labels, batch_first=True)
-#     token_labels = nn.utils.rnn.pad_sequence(token_labels, batch_first=True)
-
-#     mask = torch.ones(spectrograms.shape[0], spectrograms.shape[1], spectrograms.shape[1])
-#     for i, l in enumerate(input_lengths):
-#         mask[i, :, :l] = 0
-#     if tokenize:
-#         return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()
-
-#     return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
-
    
 
 class TransformerLrScheduler:
@@ -244,11 +190,10 @@ def add_model_noise(model, std=0.0001, gpu=True):
             noise = torch.randn(param.size()).cuda() * std if gpu else torch.randn(param.size()) * std
             param.add_(noise)
 
-
 def load_checkpoint(encoder, decoder, optimizer, scheduler, checkpoint_path):
     """Load model checkpoint"""
     if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError("Checkpoint does not exist")
+        raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     scheduler.n_steps = checkpoint["scheduler_n_steps"]
     scheduler.multiplier = checkpoint["scheduler_multiplier"]

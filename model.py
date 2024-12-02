@@ -2,21 +2,21 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
-
+from transformers import GPT2LMHeadModel
 
 class PositionalEncoder(nn.Module):
     """
     Generate positional encodings used in the relative multi-head attention module.
     These encodings are the same as the original transformer model: https://arxiv.org/abs/1706.03762
 
-        Parameters:
-            max_len (int): Maximum sequence length (time dimension)
+    Parameters:
+        max_len (int): Maximum sequence length (time dimension)
 
     Inputs:
-      len (int): Length of encodings to retrieve
+        len (int): Length of encodings to retrieve
 
     Outputs
-      Tensor (len, d_model): Positional encodings
+        Tensor (len, d_model): Positional encodings
     """
 
     def __init__(self, d_model, max_len=10000):
@@ -39,17 +39,17 @@ class RelativeMultiHeadAttention(nn.Module):
     Method proposed in Transformer-XL paper: https://arxiv.org/abs/1901.02860
 
     Parameters:
-      d_model (int): Dimension of the model
-      num_heads (int): Number of heads to split inputs into
-      dropout (float): Dropout probability
-      positional_encoder (nn.Module): PositionalEncoder module
+        d_model (int): Dimension of the model
+        num_heads (int): Number of heads to split inputs into
+        dropout (float): Dropout probability
+        positional_encoder (nn.Module): PositionalEncoder module
 
     Inputs:
-      x (Tensor): (batch_size, time, d_model)
-      mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
+        x (Tensor): (batch_size, time, d_model)
+        mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
 
     Outputs:
-      Tensor (batch_size, time, d_model): Output tensor from the attention module.
+        Tensor (batch_size, time, d_model): Output tensor from the attention module.
 
     """
 
@@ -86,7 +86,7 @@ class RelativeMultiHeadAttention(nn.Module):
         self.positional_encoder = positional_encoder
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, output_attentions=False):
         batch_size, seq_length, _ = x.size()
 
         # layer norm and pos embeddings
@@ -128,16 +128,17 @@ class RelativeMultiHeadAttention(nn.Module):
         attn = F.softmax(attn, -1)
 
         # Construct outputs from values
-        output = torch.matmul(attn, v.transpose(2, 3)).transpose(
-            1, 2
-        )  # (batch_size, time, num_heads, d_head)
-        output = output.contiguous().view(
-            batch_size, -1, self.d_model
-        )  # (batch_size, time, d_model)
+        output = torch.matmul(attn, v.transpose(2, 3)) \
+                      .transpose(1, 2)  # (batch_size, time, num_heads, d_head)
+        output = output.contiguous() \
+                       .view(batch_size, -1, self.d_model)  # (batch_size, time, d_model)
 
         # Output projections and dropout
         output = self.W_out(output)
-        return self.dropout(output)
+        if output_attentions:
+            return (self.dropout(output), attn)
+        else:
+            return (self.dropout(output),)
 
     def rel_shift(self, emb):
         """
@@ -159,16 +160,16 @@ class ConvBlock(nn.Module):
     Conformer convolutional block.
 
     Parameters:
-      d_model (int): Dimension of the model
-      kernel_size (int): Size of kernel to use for depthwise convolution
-      dropout (float): Dropout probability
+        d_model (int): Dimension of the model
+        kernel_size (int): Size of kernel to use for depthwise convolution
+        dropout (float): Dropout probability
 
     Inputs:
-      x (Tensor): (batch_size, time, d_model)
-      mask: Unused
+        x (Tensor): (batch_size, time, d_model)
+        mask: Unused
 
     Outputs:
-      Tensor (batch_size, time, d_model): Output tensor from the convolution module
+        Tensor (batch_size, time, d_model): Output tensor from the convolution module
 
     """
 
@@ -208,16 +209,16 @@ class FeedForwardBlock(nn.Module):
     Conformer feed-forward block.
 
     Parameters:
-      d_model (int): Dimension of the model
-      expansion (int): Expansion factor for first linear layer
-      dropout (float): Dropout probability
+        d_model (int): Dimension of the model
+        expansion (int): Expansion factor for first linear layer
+        dropout (float): Dropout probability
 
     Inputs:
-      x (Tensor): (batch_size, time, d_model)
-      mask: Unused
+        x (Tensor): (batch_size, time, d_model)
+        mask: Unused
 
     Outputs:
-      Tensor (batch_size, time, d_model): Output tensor from the feed-forward module
+        Tensor (batch_size, time, d_model): Output tensor from the feed-forward module
 
     """
 
@@ -242,13 +243,13 @@ class Conv2dSubsampling(nn.Module):
     Subsamples time and freq domains of input spectrograms by a factor of 4, d_model times.
 
     Parameters:
-      d_model (int): Dimension of the model
+        d_model (int): Dimension of the model
 
     Inputs:
-      x (Tensor): Input spectrogram (batch_size, time, d_input)
+        x (Tensor): Input spectrogram (batch_size, time, d_input)
 
     Outputs:
-      Tensor (batch_size, time, d_model * (d_input // 4)): Output tensor from the conlutional subsampling module
+        Tensor (batch_size, time, d_model * (d_input // 4)): Output tensor from the conlutional subsampling module
 
     """
 
@@ -276,20 +277,20 @@ class ConformerBlock(nn.Module):
     Conformer Encoder Block.
 
     Parameters:
-      d_model (int): Dimension of the model
-      conv_kernel_size (int): Size of kernel to use for depthwise convolution
-      feed_forward_residual_factor (float): output_weight for feed-forward residual connections
-      feed_forward_expansion_factor (int): Expansion factor for feed-forward block
-      num_heads (int): Number of heads to use for multi-head attention
-      positional_encoder (nn.Module): PositionalEncoder module
-      dropout (float): Dropout probability
+        d_model (int): Dimension of the model
+        conv_kernel_size (int): Size of kernel to use for depthwise convolution
+        feed_forward_residual_factor (float): output_weight for feed-forward residual connections
+        feed_forward_expansion_factor (int): Expansion factor for feed-forward block
+        num_heads (int): Number of heads to use for multi-head attention
+        positional_encoder (nn.Module): PositionalEncoder module
+        dropout (float): Dropout probability
 
     Inputs:
-      x (Tensor): (batch_size, time, d_model)
-      mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
+        x (Tensor): (batch_size, time, d_model)
+        mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
 
     Outputs:
-      Tensor (batch_size, time, d_model): Output tensor from the conformer block.
+        Tensor (batch_size, time, d_model): Output tensor from the conformer block.
 
     """
 
@@ -313,12 +314,16 @@ class ConformerBlock(nn.Module):
         self.ff2 = FeedForwardBlock(d_model, feed_forward_expansion_factor, dropout)
         self.layer_norm = nn.LayerNorm(d_model, eps=6.1e-5)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, output_attentions=False):
         x = x + (self.residual_factor * self.ff1(x))
-        x = x + self.attention(x, mask=mask)
+        attention_results = self.attention(x, mask=mask, output_attentions=output_attentions)
+        x = x + attention_results[0]
         x = x + self.conv_block(x)
         x = x + (self.residual_factor * self.ff2(x))
-        return self.layer_norm(x)
+        if output_attentions:
+            return (self.layer_norm(x), attention_results[1])
+        else:
+            return (self.layer_norm(x), )
 
 
 class ConformerEncoder(nn.Module):
@@ -326,21 +331,21 @@ class ConformerEncoder(nn.Module):
     Conformer Encoder Module.
 
     Parameters:
-      d_input (int): Dimension of the input
-      d_model (int): Dimension of the model
-      num_layers (int): Number of conformer blocks to use in the encoder
-      conv_kernel_size (int): Size of kernel to use for depthwise convolution
-      feed_forward_residual_factor (float): output_weight for feed-forward residual connections
-      feed_forward_expansion_factor (int): Expansion factor for feed-forward block
-      num_heads (int): Number of heads to use for multi-head attention
-      dropout (float): Dropout probability
+        d_input (int): Dimension of the input
+        d_model (int): Dimension of the model
+        num_layers (int): Number of conformer blocks to use in the encoder
+        conv_kernel_size (int): Size of kernel to use for depthwise convolution
+        feed_forward_residual_factor (float): output_weight for feed-forward residual connections
+        feed_forward_expansion_factor (int): Expansion factor for feed-forward block
+        num_heads (int): Number of heads to use for multi-head attention
+        dropout (float): Dropout probability
 
     Inputs:
-      x (Tensor): input spectrogram of dimension (batch_size, time, d_input)
-      mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
+        x (Tensor): input spectrogram of dimension (batch_size, time, d_input)
+        mask (Tensor): (batch_size, time, time) Optional mask to zero out attention score at certain indices
 
     Outputs:
-      Tensor (batch_size, time, d_model): Output tensor from the conformer encoder
+        Tensor (batch_size, time, d_model): Output tensor from the conformer encoder
 
 
     """
@@ -380,7 +385,7 @@ class ConformerEncoder(nn.Module):
             ]
         )
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, output_attentions=False):
         x = self.conv_subsample(x)
         if mask is not None:
             mask = mask[:, :-2:2, :-2:2]  # account for subsampling
@@ -389,11 +394,18 @@ class ConformerEncoder(nn.Module):
 
         x = self.linear_proj(x)
         x = self.dropout(x)
+        attentions = tuple()
 
         for layer in self.layers:
-            x = layer(x, mask=mask)
+            layer_results = layer(x, mask=mask, output_attentions=output_attentions)
+            x = layer_results[0]
+            if output_attentions:
+                attentions = attentions + (layer_results[1],)
 
-        return x
+        if output_attentions:
+            return (x, attentions)
+        else:
+            return (x,)
 
 
 class LSTMDecoder(nn.Module):
@@ -401,16 +413,16 @@ class LSTMDecoder(nn.Module):
     LSTM Decoder
 
     Parameters:
-      d_encoder (int): Output dimension of the encoder
-      d_decoder (int): Hidden dimension of the decoder
-      num_layers (int): Number of LSTM layers to use in the decoder
-      num_classes (int): Number of output classes to predict
+        d_encoder (int): Output dimension of the encoder
+        d_decoder (int): Hidden dimension of the decoder
+        num_layers (int): Number of LSTM layers to use in the decoder
+        num_classes (int): Number of output classes to predict
 
     Inputs:
-      x (Tensor): (batch_size, time, d_encoder)
+        x (Tensor): (batch_size, time, d_encoder)
 
     Outputs:
-      Tensor (batch_size, time, num_classes): Class prediction logits
+        Tensor (batch_size, time, num_classes): Class prediction logits
 
     """
 
@@ -422,7 +434,7 @@ class LSTMDecoder(nn.Module):
             num_layers=num_layers,
             batch_first=True,
         )
-        self.linear = nn.Linear(d_decoder, num_classes)
+        self.linear = nn.Linear(d_decoder, num_classes, bias=False)
 
     def forward(self, x):
         x, _ = self.lstm(x)
@@ -435,24 +447,82 @@ class LinearDecoder(nn.Module):
     Linear Decoder
 
     Parameters:
-      d_encoder (int): Output dimension of the encoder
-      d_decoder (int): Hidden dimension of the decoder
-      num_classes (int): Number of output classes to predict
+        d_encoder (int): Output dimension of the encoder
+        d_decoder (int): Hidden dimension of the decoder
+        num_classes (int): Number of output classes to predict
 
     Inputs:
-      x (Tensor): (batch_size, time, d_encoder)
+        x (Tensor): (batch_size, time, d_encoder)
 
     Outputs:
-      Tensor (batch_size, time, num_classes): Class prediction logits
+        Tensor (batch_size, time, num_classes): Class prediction logits
 
     """
 
     def __init__(self, d_encoder=144, d_decoder=320, num_classes=29):
         super(LinearDecoder, self).__init__()
         self.linear1 = nn.Linear(d_encoder, d_decoder)
+        self.relu = nn.ReLU()
         self.linear2 = nn.Linear(d_decoder, num_classes, bias=False)
 
     def forward(self, x):
         x = self.linear1(x)
+        x = self.relu(x)
         logits = self.linear2(x)
         return logits
+
+# class GPT2Transformer(nn.Module):
+#     """
+#     Linear Decoder
+
+#     Parameters:
+#         d_encoder (int): Output dimension of the encoder
+#         d_decoder (int): Hidden dimension of the decoder
+#         num_classes (int): Number of output classes to predict
+
+#     Inputs:
+#         x (Tensor): (batch_size, time, d_encoder)
+
+#     Outputs:
+#         Tensor (batch_size, time, num_classes): Class prediction logits
+#     """
+
+#     def __init__(self, d_model):
+#         super(GPT2Transformer, self).__init__()
+#         self.gpt2_model = GPT2LMHeadModel.from_pretrained('gpt2')
+#         for param in self.gpt2_model.parameters():
+#             param.requires_grad = False
+#         self.projector = nn.Linear(d_model, )
+
+# class TransformerDecoder(nn.Module):
+#     def __init__(
+#         self,
+#         d_encoder=144,
+#         d_decoder=320,
+#         num_layers=8,
+#         num_heads=4,
+#         feed_forward_expansion_factor=4,
+#         dropout=0.1,
+#         num_classes=29,
+#     ):
+#         super(TransformerDecoder, self).__init__()
+#         self.dropout = nn.Dropout(dropout)
+        
+#         positional_encoder = PositionalEncoder(d_encoder)
+#         self.decoder_layer = nn.TransformerDecoderLayer(
+#             d_model=d_encoder,
+#             nhead=num_heads,
+#             dim_feedforward=d_encoder * feed_forward_expansion_factor,
+#             dropout=dropout
+#         )
+#         self.transformer_decoder = nn.TransformerDecoder(
+#             self.decoder_layer, num_layers=num_layers
+#         )
+#         self.linear1 = nn.Linear(d_encoder, d_decoder)
+#         self.linear2 = nn.Linear(d_decoder, num_classes)
+
+#     def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+#         tgt_emb = self.embedding(tgt)
+#         output = self.transformer_decoder(tgt_emb, memory, tgt_mask=tgt_mask, memory_mask=memory_mask, tgt_key_padding_mask=tgt_key_padding_mask, memory_key_padding_mask=memory_key_padding_mask)
+#         output = self.fc(output)
+#         return output

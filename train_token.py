@@ -15,7 +15,8 @@ from utils import *
 import matplotlib.pyplot as plt
 import gc
 
-from transformers import GPT2Tokenizer 
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+
 
 def get_parser():
 
@@ -127,6 +128,12 @@ def get_parser():
         help="Use smart batching for faster training",
     )
     parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        default=False,
+        help="Use smart batching for faster training",
+    )
+    parser.add_argument(
         "--accumulate_iters",
         type=int,
         default=1,
@@ -134,8 +141,7 @@ def get_parser():
     )
     parser.add_argument("--output_path", type=str, default="./output")
     parser.add_argument(
-        "--tokenize",
-        "-t",
+        "--tokenize", "-t",
         action="store_true",
         default=False,
         help="Choose tokenlevel or letter level",
@@ -248,7 +254,7 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     
-    output_dir = os.path.join(args.output_path, f'Token{args.tokenize}-Linear{args.linear_decoder}-Data{args.num_data}')
+    output_dir = os.path.join(args.output_path, f'Token{args.tokenize}-Linear{args.linear_decoder}-Data{args.num_data}-Hybrid{args.hybrid}')
     os.makedirs(output_dir, exist_ok=True)
     train_loader, test_loader = load_data(args)
 
@@ -285,6 +291,12 @@ def main():
         )
     criterion = nn.CTCLoss(blank=blank_id, zero_infinity=True)
 
+    if args.hybrid:
+        gpt_model = GPT2LMHeadModel.from_pretrained('gpt2')
+        for param in gpt_model.parameters():
+            param.requires_grad = False
+    else:
+        gpt_model = None
 
     char_decoder = GreedyCharacterDecoder().eval()
     optimizer = torch.optim.AdamW(
@@ -323,11 +335,15 @@ def main():
 
     # Initialize Checkpoint
     if args.load_checkpoint:
-        start_epoch, best_loss = load_checkpoint(
-            encoder, decoder, optimizer, scheduler,
-            os.path.join(output_dir, "model_best.pt"),
-        )
-        print(f"Resuming training from checkpoint starting at epoch {start_epoch}.")
+        try:
+            start_epoch, best_loss = load_checkpoint(
+                encoder, decoder, optimizer, scheduler,
+                os.path.join(output_dir, "model_best.pt"),
+            )
+            print(f"Resuming training from checkpoint starting at epoch {start_epoch}.")
+        except:
+            start_epoch = 0
+            best_loss = float("inf")
     else:
         start_epoch = 0
         best_loss = float("inf")
@@ -351,13 +367,13 @@ def main():
             encoder, decoder, char_decoder,
             optimizer, scheduler, grad_scaler,
             criterion, train_loader,
-            args, tokenizer,
+            args, tokenizer, gpt_model,
             gpu=gpu,
         )
         valid_wer, valid_loss = validate(
             encoder, decoder, char_decoder,
             criterion, test_loader,
-            args, tokenizer, output_dir,
+            args, tokenizer, gpt_model, output_dir,
             gpu=gpu,
         )
         print(
@@ -399,7 +415,7 @@ def train(
     encoder, decoder, char_decoder,
     optimizer, scheduler, grad_scaler,
     criterion, train_loader,
-    args, tokenizer,
+    args, tokenizer, gpt_model,
     gpu=True,
 ):
     """Run a single training epoch"""
@@ -408,6 +424,8 @@ def train(
     error_rate = AvgMeter()
     avg_loss = AvgMeter()
     text_transform = TextTransform()
+    if args.hybrid:
+        print("GPT2 Embedding dim:", gpt_model.transformer.embed_dim)
 
     encoder.train()
     decoder.train()
@@ -426,7 +444,9 @@ def train(
 
         # Update models
         with autocast(enabled=args.use_amp):
-            outputs = encoder(spectrograms, mask)
+            outputs = encoder(spectrograms, mask)[0]
+            if args.hybrid:
+                outputs = outputs + gpt_model.transformer(inputs_embeds=outputs)
             outputs = decoder(outputs)
             outputs = F.log_softmax(outputs, dim=-1)
 
@@ -483,7 +503,7 @@ def train(
 def validate(
     encoder, decoder, char_decoder,
     criterion, test_loader,
-    args, tokenizer, output_dir,
+    args, tokenizer, gpt_model, output_dir,
     gpu=True
 ):
     """Evaluate model on test dataset."""
@@ -509,7 +529,9 @@ def validate(
 
         with torch.no_grad():
             with autocast(enabled=args.use_amp):
-                outputs = encoder(spectrograms, mask)
+                outputs = encoder(spectrograms, mask)[0]
+                if args.hybrid:
+                    outputs = outputs + gpt_model.transformer(inputs_embeds=outputs)
                 outputs = decoder(outputs)
                 outputs = F.log_softmax(outputs, dim=-1)
 

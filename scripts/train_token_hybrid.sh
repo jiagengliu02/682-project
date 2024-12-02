@@ -6,4 +6,5 @@ python train_token.py \
     --linear_decoder \
     --batch_size 64 \
     --epochs 300 \
+    --hybrid \
     --load_checkpoint
