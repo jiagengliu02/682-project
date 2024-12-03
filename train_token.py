@@ -432,7 +432,7 @@ def train(
     for i, batch in enumerate(train_loader):
         scheduler.step()
         gc.collect()
-        spectrograms, labels, input_lengths, label_lengths, references, mask = batch
+        spectrograms, labels, input_lengths, label_lengths, references, mask, marks = batch
 
         # Move to GPU
         if gpu:
@@ -517,7 +517,7 @@ def validate(
     decoder.eval()
     for i, batch in enumerate(test_loader):
         gc.collect()
-        spectrograms, labels, input_lengths, label_lengths, references, mask = batch
+        spectrograms, labels, input_lengths, label_lengths, references, mask, marks = batch
 
         # Move to GPU
         if gpu:

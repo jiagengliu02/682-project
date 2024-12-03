@@ -65,8 +65,9 @@ class Preprocessor:
         file.close()
     
     def preprocess(self, data):
-        spectrograms, token_labels, labels, references = [], [], [], []
+        spectrograms, token_labels, labels = [], [], []
         input_lengths, label_lengths, token_label_lengths = [], [], []
+        marks, references = [], []
         for item in data:
             waveform = item[0]
             text = item[2]
@@ -80,6 +81,7 @@ class Preprocessor:
             references.append(text)
             labels.append(label)
             token_labels.append(token_label)
+            marks.append(mark)
 
             input_lengths.append(spec.shape[0])
             label_lengths.append(label.shape[0])
@@ -98,9 +100,9 @@ class Preprocessor:
             # mask[i, :, :((l - 1) // 2 - 1) // 2] = 0
         
         if self.tokenize:
-            return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool()
+            return spectrograms, token_labels, input_lengths, token_label_lengths, references, mask.bool(), marks
         else:
-            return spectrograms, labels, input_lengths, label_lengths, references, mask.bool()
+            return spectrograms, labels, input_lengths, label_lengths, references, mask.bool(), marks
    
 
 class TransformerLrScheduler:

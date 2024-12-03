@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import gc
 
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
-
+import seaborn as sns
 
 def get_parser():
 
@@ -145,33 +145,41 @@ def get_parser():
 
     return parser
 
+# def plot_attention(attentions, layer, head, input_text, output_dir, type):
+def plot_attention(attentions, layer, head, output_dir, type):
+    # Select the attention weights for the specified layer and head
+    if head == -1:
+        attn = attentions[layer].mean(dim=1)[0].detach().cpu().numpy()
+    else:
+        attn = attentions[layer][0, head].detach().cpu().numpy()
 
-
-def plot_results(
-    epochs, train_losses, valid_losses, train_wers, valid_wers, output_dir
-):
-    plt.figure(figsize=(12, 6))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, train_losses, label="Train Loss")
-    plt.plot(epochs, valid_losses, label="Valid Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title("Loss over Epochs")
-
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, train_wers, label="Train WER")
-    plt.plot(epochs, valid_wers, label="Valid WER")
-    plt.xlabel("Epoch")
-    plt.ylabel("WER (%)")
-    plt.legend()
-    plt.title("WER over Epochs")
-
-    plt.tight_layout()
-    plt.savefig(output_dir)
+    # Plot the attention weights
+    # plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(10, 10))
+    # sns.heatmap(attn, xticklabels=input_text.split(), yticklabels=input_text.split(), cmap='viridis')
+    # sns.heatmap(attn, cmap='viridis', vmin=0.0, vmax=1.0, square=True)
+    ax = sns.heatmap(attn, cmap='gray', vmin=0.0, vmax=1.0, square=True, cbar=False)
+    # ax.xaxis.set_label_position('top')
+    # ax.xaxis.tick_top()
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    # plt.title(f'Attention Weights - Layer {layer + 1}, Head {head + 1}')
+    # plt.xlabel('Input Sequence')
+    # plt.ylabel('Output Sequence')
+    fig_path = os.path.join(output_dir, f"{type}_Layer_{layer + 1}_Head_{head + 1}.png")
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    # plt.savefig(fig_path)
+    plt.savefig(fig_path, bbox_inches='tight', pad_inches=0)
+    print("Figure saved to:", fig_path)
     plt.close()
 
+def plot_attentions(attentions, output_dir, type):
+    for i in range(len(attentions)):
+        plot_attention(attentions, i, -1, output_dir, type)
+        for j in range(attentions[i].shape[1]):
+            plot_attention(attentions, i, j, output_dir, type)
 
 def load_data(args):
     # Load Data
@@ -196,7 +204,8 @@ def load_data(args):
         pin_memory=True,
         num_workers=args.num_workers,
         batch_size=args.batch_size,
-        shuffle=True,
+        # shuffle=True,
+        shuffle=False,
         collate_fn=train_preprocessor.preprocess,
     )
 
@@ -206,6 +215,7 @@ def load_data(args):
         num_workers=args.num_workers,
         batch_size=args.batch_size,
         shuffle=False,
+        # shuffle=True,
         collate_fn=test_preprocessor.preprocess,
     )
     return train_loader, test_loader
@@ -254,6 +264,7 @@ def main():
     gpt_model = GPT2LMHeadModel.from_pretrained('gpt2')
     for param in gpt_model.parameters():
         param.requires_grad = False
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
 
     char_decoder = GreedyCharacterDecoder().eval()
     optimizer = torch.optim.AdamW(
@@ -295,8 +306,25 @@ def main():
 
     encoder.eval()
     decoder.eval()
-    batch = next(iter(test_loader))
-    spectrograms, labels, input_lengths, label_lengths, references, mask = batch
+    min_idx = 0
+    min_len = 100000
+    for idx, batch in enumerate(train_loader):
+        if batch[1].shape[1] == 10:
+            break
+        # if batch[0].shape[1] < min_len:
+        #     min_len = batch[0].shape[1]
+        #     min_idx = i
+        # if (i + 1) % 100 == 0:
+        #     print(i + 1, min_idx, min_len)
+        # if i == 1000:
+        #     break
+    # print(min_idx, min_len)
+    # exit()
+    # it = iter(test_loader)
+    # for _ in range(2):
+    #     batch = next(it)
+    spectrograms, labels, input_lengths, label_lengths, references, mask, marks = batch
+    print(idx, marks)
 
     # Move to GPU
     if gpu:
@@ -309,9 +337,13 @@ def main():
     audio_attentions = encoder(spectrograms, mask, output_attentions=True)[1]
     print(type(audio_attentions), len(audio_attentions), audio_attentions[0].shape)
     token_attentions = gpt_model.transformer(input_ids=labels, output_attentions=True)[2]
+    tokens = tokenizer.convert_ids_to_tokens(labels[0])
+    print(tokens)
     print(type(token_attentions), len(token_attentions), token_attentions[0].shape)
+    print(references)
 
-    for i in range
+    plot_attentions(audio_attentions, output_dir, "audio")
+    plot_attentions(token_attentions, output_dir, "token")
 
 
 if __name__ == "__main__":
